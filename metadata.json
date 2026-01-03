@@ -1,0 +1,7 @@
+{
+  "name": "GKO Cibitung Registration System",
+  "description": "Sistem pendaftaran jemaat online untuk Gereja GKO Cibitung dengan fitur manajemen admin, pendaftaran multi-step, dan filter data jemaat.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
