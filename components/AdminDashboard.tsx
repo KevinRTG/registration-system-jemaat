@@ -8,12 +8,27 @@ interface AdminDashboardProps {
   currentUser?: User | null;
 }
 
+const MONTHS = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+];
+
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
   const [families, setFamilies] = useState<Keluarga[]>([]);
+  
+  // View State
+  const [activeTab, setActiveTab] = useState<'families' | 'birthdays'>('families');
+  
+  // Filter State - Families
   const [searchTerm, setSearchTerm] = useState('');
   const [sectorFilter, setSectorFilter] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  
+  // Filter State - Birthdays
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+
+  // System State
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null); 
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
@@ -59,6 +74,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
     return age;
   };
 
+  // --- MEMOIZED DATA ---
+  
+  // 1. Filtered Families (Existing Logic)
   const filteredFamilies = useMemo(() => {
     return families.filter(f => {
       const kkMatch = (f.nomor_kk || '').includes(searchTerm);
@@ -71,41 +89,104 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
     });
   }, [families, searchTerm, sectorFilter, statusFilter]);
 
+  // 2. Birthday Members (New Logic)
+  const birthdayMembers = useMemo(() => {
+    const list: Array<Jemaat & { family: Keluarga; age: number; turningAge: number }> = [];
+    
+    families.forEach(f => {
+      if (f.anggota) {
+        f.anggota.forEach(m => {
+          if (m.tanggal_lahir) {
+            const birthDate = new Date(m.tanggal_lahir);
+            if (birthDate.getMonth() === selectedMonth) {
+              const currentAge = calculateAge(m.tanggal_lahir);
+              // Logic: Jika bulan ini ultah, age hasil calculateAge sudah bertambah (jika tanggal lewat) atau belum.
+              // Kita simplifikasi: turningAge adalah umur yang akan dicapai tahun ini.
+              const yearNow = new Date().getFullYear();
+              const birthYear = birthDate.getFullYear();
+              const turningAge = yearNow - birthYear;
+
+              list.push({
+                ...m,
+                family: f,
+                age: currentAge,
+                turningAge: turningAge
+              });
+            }
+          }
+        });
+      }
+    });
+
+    // Sort by Date (Day of month)
+    return list.sort((a, b) => {
+      const dayA = new Date(a.tanggal_lahir).getDate();
+      const dayB = new Date(b.tanggal_lahir).getDate();
+      return dayA - dayB;
+    });
+  }, [families, selectedMonth]);
+
+
   // --- EXPORT LOGIC ---
   const handleExportExcel = () => {
-    if (filteredFamilies.length === 0) {
-      setToast({ message: "Tidak ada data untuk diekspor sesuai filter saat ini.", type: 'error' });
+    const isBirthdayExport = activeTab === 'birthdays';
+    const dataToExport = isBirthdayExport ? birthdayMembers : filteredFamilies;
+
+    if (Array.isArray(dataToExport) && dataToExport.length === 0) {
+      setToast({ message: "Tidak ada data untuk diekspor.", type: 'error' });
       return;
     }
 
     setIsActionLoading('exporting');
     try {
-      // Flatten data: 1 baris per anggota jemaat
-      const exportData = filteredFamilies.flatMap(f => 
-        (f.anggota || []).map(a => ({
-          'No. Kartu Keluarga': f.nomor_kk,
-          'Wilayah Pelayanan': f.wilayah_pelayanan,
-          'Alamat Lengkap': f.alamat_kk,
-          'Nama Lengkap': a.nama_lengkap,
-          'NIK': a.nik,
-          'Hubungan Keluarga': a.hubungan_keluarga,
-          'Jenis Kelamin': a.jenis_kelamin,
-          'Tempat Lahir': a.tempat_lahir,
-          'Tanggal Lahir': a.tanggal_lahir,
-          'Usia': calculateAge(a.tanggal_lahir),
-          'Status Gerejawi': a.status_gerejawi,
-          'Status Verifikasi': f.status,
-          'Tanggal Pendaftaran': f.registrationDate ? new Date(f.registrationDate).toLocaleDateString('id-ID', {
-            day: '2-digit', month: 'long', year: 'numeric'
-          }) : '-'
-        }))
-      );
+      let exportData: any[] = [];
+      let fileName = '';
+
+      if (isBirthdayExport) {
+        // Export Format Ulang Tahun
+        exportData = birthdayMembers.map(m => {
+            const birthDate = new Date(m.tanggal_lahir);
+            return {
+                'Tanggal': `${birthDate.getDate()} ${MONTHS[birthDate.getMonth()]}`,
+                'Nama Lengkap': m.nama_lengkap,
+                'Ulang Tahun Ke': m.turningAge,
+                'Jenis Kelamin': m.jenis_kelamin,
+                'Wilayah': m.family.wilayah_pelayanan,
+                'No. KK': m.family.nomor_kk,
+                'Hubungan': m.hubungan_keluarga,
+                'Tanggal Lahir Full': m.tanggal_lahir
+            };
+        });
+        fileName = `Jemaat_Ultah_${MONTHS[selectedMonth]}_${new Date().getFullYear()}.xlsx`;
+      } else {
+        // Export Format Keluarga (Existing)
+        exportData = filteredFamilies.flatMap(f => 
+            (f.anggota || []).map(a => ({
+            'No. Kartu Keluarga': f.nomor_kk,
+            'Wilayah Pelayanan': f.wilayah_pelayanan,
+            'Alamat Lengkap': f.alamat_kk,
+            'Nama Lengkap': a.nama_lengkap,
+            'NIK': a.nik,
+            'Hubungan Keluarga': a.hubungan_keluarga,
+            'Jenis Kelamin': a.jenis_kelamin,
+            'Tempat Lahir': a.tempat_lahir,
+            'Tanggal Lahir': a.tanggal_lahir,
+            'Usia': calculateAge(a.tanggal_lahir),
+            'Status Gerejawi': a.status_gerejawi,
+            'Status Verifikasi': f.status,
+            'Tanggal Pendaftaran': f.registrationDate ? new Date(f.registrationDate).toLocaleDateString('id-ID', {
+                day: '2-digit', month: 'long', year: 'numeric'
+            }) : '-'
+            }))
+        );
+        fileName = `Laporan_Jemaat_GKO_Cibitung_${new Date().toISOString().split('T')[0]}.xlsx`;
+      }
 
       const worksheet = XLSX.utils.json_to_sheet(exportData);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Data Jemaat");
+      XLSX.utils.book_append_sheet(workbook, worksheet, isBirthdayExport ? "Ulang Tahun" : "Data Jemaat");
 
-      // Auto-size columns for better readability
+      // Auto-size columns
       const colWidths = Object.keys(exportData[0] || {}).map(key => {
         const headerLen = key.length;
         const maxContentLen = exportData.reduce((max, row: any) => {
@@ -116,10 +197,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
       });
       worksheet['!cols'] = colWidths;
 
-      const fileName = `Laporan_Jemaat_GKO_Cibitung_${new Date().toISOString().split('T')[0]}.xlsx`;
       XLSX.writeFile(workbook, fileName);
-      
-      setToast({ message: 'Data seluruh jemaat berhasil diekspor ke Excel.', type: 'success' });
+      setToast({ message: 'File Excel berhasil diunduh.', type: 'success' });
+
     } catch (err: any) {
       console.error("Export error:", err);
       setToast({ message: 'Gagal mengekspor data: ' + err.message, type: 'error' });
@@ -273,7 +353,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
         </div>
       )}
 
-      {/* Edit Modal */}
+      {/* Edit Modal (Existing code reused) */}
       {isEditModalOpen && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
            <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -340,154 +420,244 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
         </div>
       )}
 
-      {/* Dashboard Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl md:text-2xl font-black text-slate-900 flex items-center gap-3 tracking-tight">
-            Admin Dashboard
-            <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold uppercase tracking-widest shadow-sm">PANEL AKTIF</span>
-          </h1>
-          <p className="text-slate-500 text-xs md:text-sm">Manajemen verifikasi dan ekspor data pendaftaran jemaat.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button 
-            onClick={handleExportExcel} 
-            disabled={isActionLoading === 'exporting' || filteredFamilies.length === 0}
-            className="flex-grow md:flex-none bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 disabled:opacity-50"
-            title="Ekspor seluruh data ke format XLSX"
-          >
-            {isActionLoading === 'exporting' ? (
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-            ) : <ICONS.Export />}
-            Export Excel
-          </button>
-          <button 
-            onClick={loadData} 
-            className="flex-grow md:flex-none bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95"
-          >
-            <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      {/* Filters Area */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-grow">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 scale-90"><ICONS.Search /></span>
-          <input type="text" placeholder="Cari No. KK atau Nama Anggota..." className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all placeholder:text-slate-400" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-        </div>
-        <div className="flex gap-2">
-          <select className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="All">Semua Status</option>
-            {Object.values(VerificationStatus).map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500" value={sectorFilter} onChange={(e) => setSectorFilter(e.target.value)}>
-            <option value="All">Semua Wilayah</option>
-            {Object.values(ServiceSector).map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-      </div>
-
-      {/* Main Content List */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="divide-y divide-slate-100">
-          {isLoading && families.length === 0 ? (
-            <div className="p-24 text-center">
-              <div className="animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-              <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">Sinkronisasi Data...</span>
+      {/* Dashboard Header & Tabs */}
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div>
+            <h1 className="text-xl md:text-2xl font-black text-slate-900 flex items-center gap-3 tracking-tight">
+                Admin Dashboard
+                <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-bold uppercase tracking-widest shadow-sm">PANEL AKTIF</span>
+            </h1>
+            <p className="text-slate-500 text-xs md:text-sm">Manajemen verifikasi, ekspor data, dan laporan jemaat.</p>
             </div>
-          ) : filteredFamilies.length > 0 ? (
-            filteredFamilies.map((f) => {
-              const kepala = f.anggota?.find(a => a.hubungan_keluarga === FamilyRelationship.KepalaKeluarga);
-              const isExpanded = expandedId === f.id;
-              const isVerified = f.status === VerificationStatus.Verified;
-              const isActionKey = isActionLoading === `family-${f.id}` || isActionLoading === `delete-family-${f.id}`;
-              const isUpdatingStatus = isActionLoading === `status-${f.id}`;
-              
-              return (
-                <div key={f.id} className={`relative group transition-all duration-300 ${isActionKey ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
-                  {isActionKey && (
-                    <div className="absolute inset-0 z-30 bg-white/40 backdrop-blur-[1px] flex items-center justify-center">
-                       <div className="bg-red-600 text-white text-[10px] font-black px-6 py-1.5 rounded-full animate-pulse uppercase tracking-widest shadow-lg">Processing...</div>
-                    </div>
-                  )}
+            
+            <div className="flex flex-wrap items-center gap-2">
+            <button 
+                onClick={handleExportExcel} 
+                disabled={isActionLoading === 'exporting' || (activeTab === 'families' && filteredFamilies.length === 0) || (activeTab === 'birthdays' && birthdayMembers.length === 0)}
+                className="flex-grow md:flex-none bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 disabled:opacity-50"
+                title={activeTab === 'birthdays' ? "Download Daftar Ulang Tahun" : "Ekspor Seluruh Data"}
+            >
+                {isActionLoading === 'exporting' ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                ) : <ICONS.Export />}
+                {activeTab === 'birthdays' ? 'Export Ulang Tahun' : 'Export Data Jemaat'}
+            </button>
+            <button 
+                onClick={loadData} 
+                className="flex-grow md:flex-none bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95"
+            >
+                <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                Refresh
+            </button>
+            </div>
+        </div>
 
-                  <div className={`grid grid-cols-1 md:grid-cols-12 items-center px-6 py-5 cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50/20' : 'hover:bg-slate-50/60'}`} onClick={() => setExpandedId(isExpanded ? null : f.id)}>
-                    <div className="col-span-4">
-                      <p className="text-sm font-bold text-slate-800 tracking-tight">{f.nomor_kk}</p>
-                      <p className="text-xs text-slate-500 mt-0.5 truncate flex items-center gap-2">
-                        <span className={`w-1.5 h-1.5 rounded-full ${isVerified ? 'bg-green-500' : 'bg-blue-400'}`}></span>
-                        {kepala?.nama_lengkap || 'Tanpa Kepala Keluarga'}
-                      </p>
-                    </div>
+        {/* Tab Navigation */}
+        <div className="flex p-1 bg-slate-100 rounded-xl gap-1 max-w-md">
+            <button 
+                onClick={() => setActiveTab('families')} 
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === 'families' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+                Data Keluarga
+            </button>
+            <button 
+                onClick={() => setActiveTab('birthdays')} 
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === 'birthdays' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+                Ulang Tahun Jemaat
+            </button>
+        </div>
+      </div>
 
-                    <div className="col-span-1 text-center hidden md:block">
-                      <span className="px-3 py-1 bg-slate-100 text-[10px] font-black rounded-full uppercase text-slate-600">{f.anggota?.length || 0} Jiwa</span>
-                    </div>
-
-                    <div className="col-span-2 hidden md:block text-center">
-                      <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 uppercase tracking-tighter">{f.wilayah_pelayanan}</span>
-                    </div>
-
-                    <div className="col-span-2 flex justify-center items-center gap-3">
-                       <label className={`relative inline-flex items-center cursor-pointer transition-opacity ${isUpdatingStatus ? 'opacity-30' : ''}`} onClick={e => e.stopPropagation()}>
-                          <input type="checkbox" className="sr-only peer" checked={isVerified} onChange={(e) => handleToggleStatus(f, e)} disabled={isUpdatingStatus} />
-                          <div className="w-10 h-5 bg-slate-200 rounded-full peer peer-checked:bg-green-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5 shadow-inner"></div>
-                       </label>
-                       {isUpdatingStatus && <div className="w-3 h-3 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>}
-                    </div>
-
-                    <div className="col-span-3 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
-                       <button onClick={(e) => openEditFamily(f, e)} className="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Ubah Data KK"><ICONS.Edit /></button>
-                       <button onClick={(e) => handleDeleteFamily(f, e)} className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 hover:scale-110 rounded-lg transition-all" title="Hapus Permanen Seluruh Data KK"><ICONS.Trash /></button>
-                       <button onClick={() => setExpandedId(isExpanded ? null : f.id)} className={`p-2 rounded-lg transition-colors ${isExpanded ? 'text-blue-600 bg-blue-50' : 'text-slate-300 hover:text-blue-500'}`} title="Lihat Anggota"><ICONS.Eye /></button>
-                    </div>
-                  </div>
-
-                  {isExpanded && (
-                    <div className="bg-slate-50/40 p-6 border-y border-slate-100 animate-in fade-in slide-in-from-top-2 duration-400">
-                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {(f.anggota || []).sort((a,b) => a.hubungan_keluarga === FamilyRelationship.KepalaKeluarga ? -1 : 1).map(a => {
-                            const isDeletingMember = isActionLoading === `delete-member-${a.id}`;
-                            return (
-                              <div key={a.id} className={`bg-white p-4 rounded-2xl border border-slate-100 shadow-sm relative group/member transition-all hover:border-blue-200 hover:shadow-md ${isDeletingMember ? 'opacity-40 grayscale' : ''}`}>
-                                 <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover/member:opacity-100 transition-opacity">
-                                    <button onClick={(e) => openEditMember(f.id, a, e)} className="p-1.5 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg"><ICONS.Edit /></button>
-                                    {a.hubungan_keluarga !== FamilyRelationship.KepalaKeluarga && (
-                                      <button onClick={(e) => handleDeleteMember(f.id, a, e)} className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg"><ICONS.Trash /></button>
-                                    )}
-                                 </div>
-                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{a.hubungan_keluarga}</p>
-                                 <p className="text-sm font-bold text-slate-800 leading-tight pr-12 truncate">{a.nama_lengkap}</p>
-                                 <p className="text-[10px] text-slate-400 font-mono mt-1.5 tracking-tighter">{a.nik}</p>
-                                 <div className="flex justify-between items-center mt-5 pt-3 border-t border-slate-50">
-                                    <div className="flex flex-col">
-                                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">{calculateAge(a.tanggal_lahir)} Tahun</span>
-                                      <span className="text-[8px] text-slate-300 uppercase tracking-wide">{a.jenis_kelamin}</span>
-                                    </div>
-                                    <span className="text-[9px] font-black text-blue-600 uppercase bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">{a.status_gerejawi}</span>
-                                 </div>
-                              </div>
-                            );
-                          })}
-                       </div>
-                    </div>
-                  )}
+      {/* --- CONTENT: FAMILY LIST --- */}
+      {activeTab === 'families' && (
+        <>
+            {/* Filters Area */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-grow">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 scale-90"><ICONS.Search /></span>
+                <input type="text" placeholder="Cari No. KK atau Nama Anggota..." className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all placeholder:text-slate-400" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                 </div>
-              );
-            })
-          ) : (
-            <div className="p-24 text-center">
-              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
-                <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 9.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              </div>
-              <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Data Tidak Ditemukan</p>
-              <button onClick={() => {setSearchTerm(''); setSectorFilter('All'); setStatusFilter('All');}} className="mt-4 text-xs font-bold text-blue-600 hover:underline">Reset Semua Filter</button>
+                <div className="flex gap-2">
+                <select className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                    <option value="All">Semua Status</option>
+                    {Object.values(VerificationStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <select className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500" value={sectorFilter} onChange={(e) => setSectorFilter(e.target.value)}>
+                    <option value="All">Semua Wilayah</option>
+                    {Object.values(ServiceSector).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                </div>
             </div>
-          )}
-        </div>
-      </div>
+
+            {/* List */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="divide-y divide-slate-100">
+                {isLoading && families.length === 0 ? (
+                    <div className="p-24 text-center">
+                    <div className="animate-spin h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+                    <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">Sinkronisasi Data...</span>
+                    </div>
+                ) : filteredFamilies.length > 0 ? (
+                    filteredFamilies.map((f) => {
+                    const kepala = f.anggota?.find(a => a.hubungan_keluarga === FamilyRelationship.KepalaKeluarga);
+                    const isExpanded = expandedId === f.id;
+                    const isVerified = f.status === VerificationStatus.Verified;
+                    const isActionKey = isActionLoading === `family-${f.id}` || isActionLoading === `delete-family-${f.id}`;
+                    const isUpdatingStatus = isActionLoading === `status-${f.id}`;
+                    
+                    return (
+                        <div key={f.id} className={`relative group transition-all duration-300 ${isActionKey ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
+                        {isActionKey && (
+                            <div className="absolute inset-0 z-30 bg-white/40 backdrop-blur-[1px] flex items-center justify-center">
+                            <div className="bg-red-600 text-white text-[10px] font-black px-6 py-1.5 rounded-full animate-pulse uppercase tracking-widest shadow-lg">Processing...</div>
+                            </div>
+                        )}
+
+                        <div className={`grid grid-cols-1 md:grid-cols-12 items-center px-6 py-5 cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50/20' : 'hover:bg-slate-50/60'}`} onClick={() => setExpandedId(isExpanded ? null : f.id)}>
+                            <div className="col-span-4">
+                            <p className="text-sm font-bold text-slate-800 tracking-tight">{f.nomor_kk}</p>
+                            <p className="text-xs text-slate-500 mt-0.5 truncate flex items-center gap-2">
+                                <span className={`w-1.5 h-1.5 rounded-full ${isVerified ? 'bg-green-500' : 'bg-blue-400'}`}></span>
+                                {kepala?.nama_lengkap || 'Tanpa Kepala Keluarga'}
+                            </p>
+                            </div>
+
+                            <div className="col-span-1 text-center hidden md:block">
+                            <span className="px-3 py-1 bg-slate-100 text-[10px] font-black rounded-full uppercase text-slate-600">{f.anggota?.length || 0} Jiwa</span>
+                            </div>
+
+                            <div className="col-span-2 hidden md:block text-center">
+                            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 uppercase tracking-tighter">{f.wilayah_pelayanan}</span>
+                            </div>
+
+                            <div className="col-span-2 flex justify-center items-center gap-3">
+                            <label className={`relative inline-flex items-center cursor-pointer transition-opacity ${isUpdatingStatus ? 'opacity-30' : ''}`} onClick={e => e.stopPropagation()}>
+                                <input type="checkbox" className="sr-only peer" checked={isVerified} onChange={(e) => handleToggleStatus(f, e)} disabled={isUpdatingStatus} />
+                                <div className="w-10 h-5 bg-slate-200 rounded-full peer peer-checked:bg-green-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5 shadow-inner"></div>
+                            </label>
+                            {isUpdatingStatus && <div className="w-3 h-3 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>}
+                            </div>
+
+                            <div className="col-span-3 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
+                            <button onClick={(e) => openEditFamily(f, e)} className="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Ubah Data KK"><ICONS.Edit /></button>
+                            <button onClick={(e) => handleDeleteFamily(f, e)} className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 hover:scale-110 rounded-lg transition-all" title="Hapus Permanen Seluruh Data KK"><ICONS.Trash /></button>
+                            <button onClick={() => setExpandedId(isExpanded ? null : f.id)} className={`p-2 rounded-lg transition-colors ${isExpanded ? 'text-blue-600 bg-blue-50' : 'text-slate-300 hover:text-blue-500'}`} title="Lihat Anggota"><ICONS.Eye /></button>
+                            </div>
+                        </div>
+
+                        {isExpanded && (
+                            <div className="bg-slate-50/40 p-6 border-y border-slate-100 animate-in fade-in slide-in-from-top-2 duration-400">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {(f.anggota || []).sort((a,b) => a.hubungan_keluarga === FamilyRelationship.KepalaKeluarga ? -1 : 1).map(a => {
+                                    const isDeletingMember = isActionLoading === `delete-member-${a.id}`;
+                                    return (
+                                    <div key={a.id} className={`bg-white p-4 rounded-2xl border border-slate-100 shadow-sm relative group/member transition-all hover:border-blue-200 hover:shadow-md ${isDeletingMember ? 'opacity-40 grayscale' : ''}`}>
+                                        <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover/member:opacity-100 transition-opacity">
+                                            <button onClick={(e) => openEditMember(f.id, a, e)} className="p-1.5 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg"><ICONS.Edit /></button>
+                                            {a.hubungan_keluarga !== FamilyRelationship.KepalaKeluarga && (
+                                            <button onClick={(e) => handleDeleteMember(f.id, a, e)} className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg"><ICONS.Trash /></button>
+                                            )}
+                                        </div>
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{a.hubungan_keluarga}</p>
+                                        <p className="text-sm font-bold text-slate-800 leading-tight pr-12 truncate">{a.nama_lengkap}</p>
+                                        <p className="text-[10px] text-slate-400 font-mono mt-1.5 tracking-tighter">{a.nik}</p>
+                                        <div className="flex justify-between items-center mt-5 pt-3 border-t border-slate-50">
+                                            <div className="flex flex-col">
+                                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">{calculateAge(a.tanggal_lahir)} Tahun</span>
+                                            <span className="text-[8px] text-slate-300 uppercase tracking-wide">{a.jenis_kelamin}</span>
+                                            </div>
+                                            <span className="text-[9px] font-black text-blue-600 uppercase bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">{a.status_gerejawi}</span>
+                                        </div>
+                                    </div>
+                                    );
+                                })}
+                            </div>
+                            </div>
+                        )}
+                        </div>
+                    );
+                    })
+                ) : (
+                    <div className="p-24 text-center">
+                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                        <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 9.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </div>
+                    <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Data Tidak Ditemukan</p>
+                    <button onClick={() => {setSearchTerm(''); setSectorFilter('All'); setStatusFilter('All');}} className="mt-4 text-xs font-bold text-blue-600 hover:underline">Reset Semua Filter</button>
+                    </div>
+                )}
+                </div>
+            </div>
+        </>
+      )}
+
+      {/* --- CONTENT: BIRTHDAY LIST --- */}
+      {activeTab === 'birthdays' && (
+        <>
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
+                <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">Pilih Bulan:</span>
+                <select 
+                    value={selectedMonth} 
+                    onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                    className="flex-1 max-w-xs px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                    {MONTHS.map((m, idx) => (
+                        <option key={idx} value={idx}>{m}</option>
+                    ))}
+                </select>
+                <div className="flex-grow text-right text-xs text-slate-400 hidden sm:block">
+                   Total yang berulang tahun: <strong>{birthdayMembers.length} Orang</strong>
+                </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden min-h-[400px]">
+                <div className="grid grid-cols-12 bg-slate-50 border-b border-slate-200 px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    <div className="col-span-2 md:col-span-1">Tgl</div>
+                    <div className="col-span-6 md:col-span-4">Nama Lengkap</div>
+                    <div className="col-span-2 md:col-span-2 text-center">Usia</div>
+                    <div className="col-span-2 md:col-span-2 hidden md:block">Wilayah</div>
+                    <div className="col-span-3 text-right hidden md:block">Status</div>
+                </div>
+                
+                <div className="divide-y divide-slate-100">
+                    {birthdayMembers.length > 0 ? (
+                        birthdayMembers.map(m => {
+                            const date = new Date(m.tanggal_lahir).getDate();
+                            return (
+                                <div key={m.id} className="grid grid-cols-12 items-center px-6 py-4 hover:bg-blue-50/30 transition-colors">
+                                    <div className="col-span-2 md:col-span-1">
+                                        <span className="w-8 h-8 flex items-center justify-center bg-blue-100 text-blue-600 font-bold rounded-lg text-sm">{date}</span>
+                                    </div>
+                                    <div className="col-span-6 md:col-span-4 pr-4">
+                                        <p className="text-sm font-bold text-slate-800 truncate">{m.nama_lengkap}</p>
+                                        <p className="text-[10px] text-slate-400 truncate mt-0.5">{m.family.nomor_kk}</p>
+                                    </div>
+                                    <div className="col-span-2 md:col-span-2 text-center">
+                                        <span className="text-xs font-semibold text-slate-600">Ke-{m.turningAge}</span>
+                                    </div>
+                                    <div className="col-span-2 md:col-span-2 hidden md:block">
+                                        <span className="text-[10px] px-2 py-1 bg-slate-100 rounded-md font-bold text-slate-500 uppercase">{m.family.wilayah_pelayanan}</span>
+                                    </div>
+                                    <div className="col-span-3 text-right hidden md:block">
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${m.jenis_kelamin === Gender.LakiLaki ? 'text-blue-500' : 'text-pink-500'}`}>
+                                            {m.jenis_kelamin}
+                                        </span>
+                                    </div>
+                                </div>
+                            )
+                        })
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+                            <span className="text-4xl mb-2">🎂</span>
+                            <p className="text-sm font-bold uppercase tracking-widest">Tidak ada yang ulang tahun di bulan ini</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </>
+      )}
 
       <div className="text-center pt-10">
          <p className="text-[10px] text-slate-300 font-bold uppercase tracking-[0.2em]">Sistem Manajemen Jemaat GKO Cibitung &copy; {new Date().getFullYear()}</p>
