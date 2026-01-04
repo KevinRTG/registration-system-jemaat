@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { STEPS, ICONS } from '../constants';
-import { Gender, FamilyRelationship, ChurchStatus, ServiceSector, Jemaat, Keluarga, VerificationStatus, User } from '../types';
+import { Gender, FamilyRelationship, ChurchStatus, ServiceSector, Jemaat, Keluarga, VerificationStatus, User, MaritalStatus, BloodType } from '../types';
 import { apiService } from '../services/api';
 
 interface RegistrationStepperProps {
@@ -27,13 +27,28 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
       nama_lengkap: '',
       nik: '',
       tempat_lahir: '',
-      tanggal_lahir: ''
+      tanggal_lahir: '',
+      // Default New Fields
+      status_pernikahan: MaritalStatus.BelumMenikah,
+      golongan_darah: BloodType.Unknown,
+      pekerjaan: '',
+      nomor_telepon: '',
+      email: '',
+      alamat_domisili: '',
+      catatan_pelayanan: ''
     }
   ]);
 
   const [agreement, setAgreement] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Helper untuk mengisi alamat domisili otomatis sama dengan KK
+  const copyAddressToMember = (index: number) => {
+    const newAnggota = [...anggota];
+    newAnggota[index] = { ...newAnggota[index], alamat_domisili: kkData.alamat_kk };
+    setAnggota(newAnggota);
+  };
 
   const prevStep = () => {
     setCurrentStep((prev) => Math.max(1, prev - 1));
@@ -51,7 +66,7 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }));
   };
 
-  const handleAnggotaChange = (index: number, e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleAnggotaChange = (index: number, e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     const newAnggota = [...anggota];
     newAnggota[index] = { ...newAnggota[index], [name]: value };
@@ -70,7 +85,9 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
       nama_lengkap: '',
       nik: '',
       tempat_lahir: '',
-      tanggal_lahir: ''
+      tanggal_lahir: '',
+      status_pernikahan: MaritalStatus.BelumMenikah,
+      golongan_darah: BloodType.Unknown
     }]);
   };
 
@@ -126,15 +143,10 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
         status: VerificationStatus.Pending
       };
 
-      // 1. Simpan data keluarga
       await apiService.families.create(newKeluarga);
-
-      // 2. Update profile user dengan NIK KK yang baru didaftarkan
       await apiService.auth.updateProfile(currentUser.id, { nik_kk: kkData.nomor_kk });
 
       onShowNotification('Pendaftaran Berhasil! Data Anda telah masuk ke sistem dan menunggu verifikasi admin.', 'success');
-      
-      // 3. Panggil callback dengan NIK baru agar App.tsx bisa update state
       onComplete(kkData.nomor_kk);
     } catch (error) {
       console.error(error);
@@ -182,7 +194,7 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
                 >
                   {Object.values(ServiceSector).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-                <p className="text-[10px] text-slate-500 mt-1">*Jika belum tahu, pilih "Belum ada Sektor Wilayah". Admin akan menentukannya nanti.</p>
+                <p className="text-[10px] text-slate-500 mt-1">*Jika belum tahu, pilih "Belum ada Sektor Wilayah".</p>
               </div>
             </div>
             <div className="space-y-1">
@@ -209,7 +221,7 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
               </button>
             </div>
             
-            <div className="space-y-6">
+            <div className="space-y-8">
               {anggota.map((person, index) => (
                 <div key={person.id} className="p-6 bg-slate-50 rounded-2xl border border-slate-200 relative group transition-all hover:border-blue-200 hover:bg-white shadow-sm hover:shadow-md">
                   {person.hubungan_keluarga !== FamilyRelationship.KepalaKeluarga && (
@@ -221,25 +233,30 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
                       <ICONS.Trash />
                     </button>
                   )}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-1">
+                  
+                  {/* Grid Layout untuk field jemaat */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    {/* Baris 1: Identitas Dasar */}
+                    <div className="space-y-1 col-span-1 md:col-span-2">
                       <label className="text-[10px] font-bold text-slate-500 uppercase">Nama Lengkap</label>
                       <input 
                         type="text" name="nama_lengkap" value={person.nama_lengkap || ''} onChange={(e) => handleAnggotaChange(index, e)}
                         className={`w-full p-2 bg-white text-slate-900 border ${errors[`nama_lengkap_${index}`] ? 'border-red-500' : 'border-slate-200'} rounded-lg text-sm placeholder:text-slate-400`}
-                        placeholder="Sesuai KTP/Akte"
+                        placeholder="Sesuai KTP"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">NIK</label>
+                    <div className="space-y-1 col-span-1 md:col-span-2">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Nomor Induk (NIK)</label>
                       <input 
                         type="text" name="nik" maxLength={16} value={person.nik || ''} onChange={(e) => handleAnggotaChange(index, e)}
                         className={`w-full p-2 bg-white text-slate-900 border ${errors[`nik_${index}`] ? 'border-red-500' : 'border-slate-200'} rounded-lg text-sm placeholder:text-slate-400`}
                         placeholder="16 digit NIK"
                       />
                     </div>
+
+                    {/* Baris 2: Detail Lahir & Hubungan */}
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Hubungan</label>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Status Keluarga</label>
                       <select 
                         name="hubungan_keluarga" value={person.hubungan_keluarga} onChange={(e) => handleAnggotaChange(index, e)}
                         className="w-full p-2 bg-white text-slate-900 border border-slate-200 rounded-lg text-sm disabled:bg-slate-100 disabled:text-slate-500"
@@ -252,25 +269,83 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
                       <label className="text-[10px] font-bold text-slate-500 uppercase">Tempat Lahir</label>
                       <input 
                         type="text" name="tempat_lahir" value={person.tempat_lahir || ''} onChange={(e) => handleAnggotaChange(index, e)}
-                        className={`w-full p-2 bg-white text-slate-900 border ${errors[`tempat_lahir_${index}`] ? 'border-red-500' : 'border-slate-200'} rounded-lg text-sm placeholder:text-slate-400`}
-                        placeholder="Kota Lahir"
+                        className={`w-full p-2 bg-white text-slate-900 border ${errors[`tempat_lahir_${index}`] ? 'border-red-500' : 'border-slate-200'} rounded-lg text-sm`}
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Tgl Lahir</label>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Tanggal Lahir</label>
                       <input 
                         type="date" name="tanggal_lahir" value={person.tanggal_lahir || ''} onChange={(e) => handleAnggotaChange(index, e)}
                         className={`w-full p-2 bg-white text-slate-900 border ${errors[`tanggal_lahir_${index}`] ? 'border-red-500' : 'border-slate-200'} rounded-lg text-sm`}
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Gender</label>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Jenis Kelamin</label>
                       <select 
                         name="jenis_kelamin" value={person.jenis_kelamin} onChange={(e) => handleAnggotaChange(index, e)}
                         className="w-full p-2 bg-white text-slate-900 border border-slate-200 rounded-lg text-sm"
                       >
                         <option value={Gender.LakiLaki}>Laki-laki</option>
                         <option value={Gender.Perempuan}>Perempuan</option>
+                      </select>
+                    </div>
+
+                    {/* Baris 3: Alamat Domisili */}
+                    <div className="space-y-1 col-span-1 md:col-span-4">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Alamat Domisili (Jemaat)</label>
+                        <button type="button" onClick={() => copyAddressToMember(index)} className="text-[10px] text-blue-600 hover:underline">Sama dengan Alamat KK</button>
+                      </div>
+                      <input 
+                        type="text" name="alamat_domisili" value={person.alamat_domisili || ''} onChange={(e) => handleAnggotaChange(index, e)}
+                        className="w-full p-2 bg-white text-slate-900 border border-slate-200 rounded-lg text-sm"
+                        placeholder="Isi jika berbeda dengan alamat KK"
+                      />
+                    </div>
+
+                    {/* Baris 4: Kontak & Pekerjaan */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">No. Telepon/WA</label>
+                      <input 
+                        type="text" name="nomor_telepon" value={person.nomor_telepon || ''} onChange={(e) => handleAnggotaChange(index, e)}
+                        className="w-full p-2 bg-white text-slate-900 border border-slate-200 rounded-lg text-sm"
+                        placeholder="0812..."
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">E-mail</label>
+                      <input 
+                        type="email" name="email" value={person.email || ''} onChange={(e) => handleAnggotaChange(index, e)}
+                        className="w-full p-2 bg-white text-slate-900 border border-slate-200 rounded-lg text-sm"
+                        placeholder="contoh@gmail.com"
+                      />
+                    </div>
+                    <div className="space-y-1 col-span-1 md:col-span-2">
+                       <label className="text-[10px] font-bold text-slate-500 uppercase">Pekerjaan/Usaha</label>
+                       <input 
+                        type="text" name="pekerjaan" value={person.pekerjaan || ''} onChange={(e) => handleAnggotaChange(index, e)}
+                        className="w-full p-2 bg-white text-slate-900 border border-slate-200 rounded-lg text-sm"
+                        placeholder="Contoh: Karyawan Swasta"
+                      />
+                    </div>
+
+                    {/* Baris 5: Status Tambahan */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Status Pernikahan</label>
+                      <select 
+                        name="status_pernikahan" value={person.status_pernikahan} onChange={(e) => handleAnggotaChange(index, e)}
+                        className="w-full p-2 bg-white text-slate-900 border border-slate-200 rounded-lg text-sm"
+                      >
+                         {Object.values(MaritalStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Gol. Darah</label>
+                      <select 
+                        name="golongan_darah" value={person.golongan_darah} onChange={(e) => handleAnggotaChange(index, e)}
+                        className="w-full p-2 bg-white text-slate-900 border border-slate-200 rounded-lg text-sm"
+                      >
+                         {Object.values(BloodType).map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
                     <div className="space-y-1">
@@ -281,6 +356,14 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
                       >
                         {Object.values(ChurchStatus).map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
+                    </div>
+                    <div className="space-y-1">
+                       <label className="text-[10px] font-bold text-slate-500 uppercase">Minat Pelayanan</label>
+                       <input 
+                        type="text" name="catatan_pelayanan" value={person.catatan_pelayanan || ''} onChange={(e) => handleAnggotaChange(index, e)}
+                        className="w-full p-2 bg-white text-slate-900 border border-slate-200 rounded-lg text-sm"
+                        placeholder="Padus, Musik, dll"
+                      />
                     </div>
                   </div>
                 </div>

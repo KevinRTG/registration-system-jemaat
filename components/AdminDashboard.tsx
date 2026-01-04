@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { Keluarga, ServiceSector, FamilyRelationship, Jemaat, Gender, ChurchStatus, VerificationStatus, User } from '../types';
+import { Keluarga, ServiceSector, FamilyRelationship, Jemaat, Gender, ChurchStatus, VerificationStatus, User, MaritalStatus, BloodType } from '../types';
 import { ICONS } from '../constants';
 import { apiService } from '../services/api';
 import SettingsPanel from './SettingsPanel';
@@ -35,12 +35,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null); 
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
-  // Edit Modal State
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editType, setEditType] = useState<'family' | 'member'>('family');
-  const [editingFamily, setEditingFamily] = useState<Keluarga | null>(null);
-  const [editingMember, setEditingMember] = useState<Jemaat | null>(null);
-  const [editForm, setEditForm] = useState<any>({});
+  // Modal State (Edit & Add)
+  const [modalMode, setModalMode] = useState<'none' | 'edit_family' | 'edit_member' | 'add_family' | 'add_member'>('none');
+  const [selectedFamily, setSelectedFamily] = useState<Keluarga | null>(null);
+  const [selectedMember, setSelectedMember] = useState<Jemaat | null>(null);
+  const [formData, setFormData] = useState<any>({});
   
   // File Import Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -142,27 +141,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
     const templateData = [
         {
             'NO_KK': '3275000000000001',
-            'ALAMAT': 'Jl. Contoh Alamat No. 1, Cibitung',
+            'ALAMAT_KK': 'Jl. Contoh Alamat No. 1, Cibitung',
             'WILAYAH': 'Sektor A',
             'NAMA_LENGKAP': 'Budi Santoso',
-            'NIK': '3275123456780001',
-            'JENIS_KELAMIN': 'Laki-laki',
+            'NOMOR_INDUK': '3275123456780001',
+            'STATUS_KELUARGA': 'Kepala Keluarga',
             'TEMPAT_LAHIR': 'Jakarta',
             'TGL_LAHIR': '1980-01-31',
-            'HUBUNGAN': 'Kepala Keluarga',
-            'STATUS_GEREJAWI': 'Sidi'
-        },
-        {
-            'NO_KK': '3275000000000001',
-            'ALAMAT': 'Jl. Contoh Alamat No. 1, Cibitung',
-            'WILAYAH': 'Sektor A',
-            'NAMA_LENGKAP': 'Siti Aminah',
-            'NIK': '3275123456780002',
-            'JENIS_KELAMIN': 'Perempuan',
-            'TEMPAT_LAHIR': 'Bekasi',
-            'TGL_LAHIR': '1985-05-20',
-            'HUBUNGAN': 'Istri',
-            'STATUS_GEREJAWI': 'Sidi'
+            'ALAMAT_DOMISILI': 'Jl. Sama dengan KK',
+            'JENIS_KELAMIN': 'Laki-laki',
+            'STATUS_PERNIKAHAN': 'Menikah',
+            'NO_TELEPON': '08123456789',
+            'EMAIL': 'budi@example.com',
+            'PEKERJAAN': 'Karyawan',
+            'GOL_DARAH': 'O',
+            'STATUS_GEREJAWI': 'Sidi',
+            'CATATAN_PELAYANAN': 'Musik'
         }
     ];
     const ws = XLSX.utils.json_to_sheet(templateData);
@@ -208,8 +202,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                     groups[noKK] = {
                         id: '',
                         nomor_kk: noKK,
-                        alamat_kk: normalizeString(row['ALAMAT']),
-                        // Default ke Belum ada Sektor jika kosong
+                        alamat_kk: normalizeString(row['ALAMAT_KK'] || row['ALAMAT']),
                         wilayah_pelayanan: normalizeString(row['WILAYAH']) as ServiceSector || ServiceSector.Belum,
                         status: VerificationStatus.Verified,
                         registrationDate: new Date().toISOString(),
@@ -219,12 +212,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                 groups[noKK].anggota.push({
                     id: '',
                     nama_lengkap: normalizeString(row['NAMA_LENGKAP']),
-                    nik: normalizeString(row['NIK']),
+                    nik: normalizeString(row['NOMOR_INDUK'] || row['NIK']),
                     jenis_kelamin: normalizeString(row['JENIS_KELAMIN']).toUpperCase().startsWith('L') ? Gender.LakiLaki : Gender.Perempuan,
                     tempat_lahir: normalizeString(row['TEMPAT_LAHIR']),
                     tanggal_lahir: parseDate(row['TGL_LAHIR']),
-                    hubungan_keluarga: normalizeString(row['HUBUNGAN']) as FamilyRelationship || FamilyRelationship.Lainnya,
-                    status_gerejawi: normalizeString(row['STATUS_GEREJAWI']) as ChurchStatus || ChurchStatus.Belum
+                    hubungan_keluarga: normalizeString(row['STATUS_KELUARGA'] || row['HUBUNGAN']) as FamilyRelationship || FamilyRelationship.Lainnya,
+                    status_gerejawi: normalizeString(row['STATUS_GEREJAWI']) as ChurchStatus || ChurchStatus.Belum,
+                    alamat_domisili: normalizeString(row['ALAMAT_DOMISILI'] || row['ALAMAT']),
+                    status_pernikahan: normalizeString(row['STATUS_PERNIKAHAN'] || row['STATUS']) as MaritalStatus,
+                    nomor_telepon: normalizeString(row['NO_TELEPON']),
+                    email: normalizeString(row['EMAIL']),
+                    pekerjaan: normalizeString(row['PEKERJAAN']),
+                    golongan_darah: normalizeString(row['GOL_DARAH']) as BloodType,
+                    catatan_pelayanan: normalizeString(row['CATATAN_PELAYANAN'])
                 });
             });
 
@@ -288,24 +288,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
       } else {
         exportData = filteredFamilies.flatMap(f => 
             (f.anggota || []).map(a => ({
-            'No. Kartu Keluarga': f.nomor_kk,
-            'Wilayah Pelayanan': f.wilayah_pelayanan,
-            'Alamat Lengkap': f.alamat_kk,
-            'Nama Lengkap': a.nama_lengkap,
-            'NIK': a.nik,
-            'Hubungan Keluarga': a.hubungan_keluarga,
-            'Jenis Kelamin': a.jenis_kelamin,
-            'Tempat Lahir': a.tempat_lahir,
-            'Tanggal Lahir': a.tanggal_lahir,
-            'Usia': calculateAge(a.tanggal_lahir),
-            'Status Gerejawi': a.status_gerejawi,
-            'Status Verifikasi': f.status,
-            'Tanggal Pendaftaran': f.registrationDate ? new Date(f.registrationDate).toLocaleDateString('id-ID', {
-                day: '2-digit', month: 'long', year: 'numeric'
-            }) : '-'
+              'Nomor Induk': a.nik,
+              'Nama Lengkap': a.nama_lengkap,
+              'Status Dalam Keluarga': a.hubungan_keluarga,
+              'Tempat Tanggal Lahir': `${a.tempat_lahir}, ${a.tanggal_lahir}`,
+              'Alamat': a.alamat_domisili || f.alamat_kk,
+              'Jenis Kelamin': a.jenis_kelamin,
+              'Status': a.status_pernikahan || '-',
+              'Nomor Telepon': a.nomor_telepon || '-',
+              'E-mail': a.email || '-',
+              'Pekerjaan/Usaha': a.pekerjaan || '-',
+              'Gol. Darah': a.golongan_darah || '-',
+              'Catatan Pelayanan': a.catatan_pelayanan || '-',
+              'Status Gerejawi': a.status_gerejawi,
+              'No. KK': f.nomor_kk,
+              'Wilayah': f.wilayah_pelayanan
             }))
         );
-        fileName = `Laporan_Jemaat_GKO_Cibitung_${new Date().toISOString().split('T')[0]}.xlsx`;
+        fileName = `Data_Jemaat_GKO_Cibitung_${new Date().toISOString().split('T')[0]}.xlsx`;
       }
 
       const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -323,105 +323,169 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
     }
   };
 
-  // --- DELETE LOGIC ---
-  const handleDeleteFamily = async (family: Keluarga, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (isActionLoading) return;
+  // --- CRUD HANDLERS ---
+  const handleOpenAddFamily = () => {
+    setModalMode('add_family');
+    setFormData({
+      nomor_kk: '',
+      alamat_kk: '',
+      wilayah_pelayanan: ServiceSector.Belum,
+      // Head of Family Data
+      nama_lengkap: '',
+      nik: '',
+      tempat_lahir: '',
+      tanggal_lahir: '',
+      jenis_kelamin: Gender.LakiLaki,
+      hubungan_keluarga: FamilyRelationship.KepalaKeluarga,
+      status_gerejawi: ChurchStatus.Belum,
+      // Extras
+      status_pernikahan: MaritalStatus.Menikah,
+      golongan_darah: BloodType.Unknown,
+      pekerjaan: '',
+      nomor_telepon: ''
+    });
+  };
 
-    const memberCount = family.anggota?.length || 0;
-    const isConfirmed = window.confirm(
-      `PERINGATAN: PENGHAPUSAN PERMANEN\n\n` +
-      `Nomor KK: ${family.nomor_kk}\n` +
-      `Total Anggota: ${memberCount} orang\n\n` +
-      `Seluruh data akan terhapus. Lanjutkan?`
-    );
+  const handleOpenAddMember = (family: Keluarga, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedFamily(family);
+    setModalMode('add_member');
+    setFormData({
+      nama_lengkap: '',
+      nik: '',
+      tempat_lahir: '',
+      tanggal_lahir: '',
+      jenis_kelamin: Gender.LakiLaki,
+      hubungan_keluarga: FamilyRelationship.Anak,
+      status_gerejawi: ChurchStatus.Belum,
+      alamat_domisili: family.alamat_kk,
+      status_pernikahan: MaritalStatus.BelumMenikah,
+      golongan_darah: BloodType.Unknown,
+      pekerjaan: '',
+      nomor_telepon: '',
+      email: '',
+      catatan_pelayanan: ''
+    });
+  };
+
+  const handleDeleteFamily = async (family: Keluarga, e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    if (isActionLoading) return;
+    if (!window.confirm(`HAPUS PERMANEN KK ${family.nomor_kk}? Data tidak bisa dikembalikan.`)) return;
     
-    if (!isConfirmed) return;
-    
-    const actionKey = `delete-family-${family.id}`;
-    setIsActionLoading(actionKey);
-    
+    setIsActionLoading(`delete-family-${family.id}`);
     try {
       await apiService.families.delete(family.id);
       setFamilies(prev => prev.filter(f => f.id !== family.id));
       if (expandedId === family.id) setExpandedId(null);
-      setToast({ message: `Data keluarga ${family.nomor_kk} berhasil dihapus dari sistem.`, type: 'success' });
+      setToast({ message: `Data keluarga ${family.nomor_kk} berhasil dihapus.`, type: 'success' });
     } catch (err: any) {
-      setToast({ message: err.message || 'Gagal menghapus data keluarga.', type: 'error' });
+      setToast({ message: err.message, type: 'error' });
     } finally {
       setIsActionLoading(null);
     }
   };
 
   const handleDeleteMember = async (familyId: string, member: Jemaat, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
+    e.preventDefault(); e.stopPropagation();
     if (member.hubungan_keluarga === FamilyRelationship.KepalaKeluarga) {
-      alert("Kepala Keluarga tidak bisa dihapus secara individu.");
+      alert("Kepala Keluarga tidak bisa dihapus sendiri. Hapus KK jika perlu.");
       return;
     }
-
-    if (!window.confirm(`Hapus anggota "${member.nama_lengkap}" dari keluarga?`)) return;
+    if (!window.confirm(`Hapus anggota "${member.nama_lengkap}"?`)) return;
 
     setIsActionLoading(`delete-member-${member.id}`);
     try {
       await apiService.families.deleteMember(familyId, member.id);
       setFamilies(prev => prev.map(f => f.id === familyId ? { ...f, anggota: f.anggota.filter(m => m.id !== member.id) } : f));
-      setToast({ message: `Anggota "${member.nama_lengkap}" berhasil dihapus.`, type: 'success' });
+      setToast({ message: `Anggota berhasil dihapus.`, type: 'success' });
     } catch (err: any) {
-      setToast({ message: err.message || 'Gagal menghapus anggota.', type: 'error' });
+      setToast({ message: err.message, type: 'error' });
     } finally {
       setIsActionLoading(null);
     }
   };
 
-  // --- EDIT LOGIC ---
   const openEditFamily = (family: Keluarga, e: React.MouseEvent) => {
-    e.preventDefault();
     e.stopPropagation();
-    setEditType('family');
-    setEditingFamily(family);
-    setEditForm({
+    setModalMode('edit_family');
+    setSelectedFamily(family);
+    setFormData({
       nomor_kk: family.nomor_kk,
       alamat_kk: family.alamat_kk,
       wilayah_pelayanan: family.wilayah_pelayanan,
       status: family.status
     });
-    setIsEditModalOpen(true);
   };
 
   const openEditMember = (familyId: string, member: Jemaat, e: React.MouseEvent) => {
-    e.preventDefault();
     e.stopPropagation();
-    setEditType('member');
-    setEditingFamily(families.find(f => f.id === familyId) || null);
-    setEditingMember(member);
-    setEditForm({ ...member });
-    setIsEditModalOpen(true);
+    setModalMode('edit_member');
+    setSelectedFamily(families.find(f => f.id === familyId) || null);
+    setSelectedMember(member);
+    setFormData({ ...member });
   };
 
-  const handleEditSubmit = async (e: React.FormEvent) => {
+  const handleModalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsActionLoading('modal-save');
     try {
-      if (editType === 'family' && editingFamily) {
-        await apiService.families.update(editingFamily.id, editForm);
-        setFamilies(prev => prev.map(f => f.id === editingFamily.id ? { ...f, ...editForm } : f));
-        setToast({ message: 'Perubahan data keluarga berhasil disimpan.', type: 'success' });
-      } else if (editType === 'member' && editingMember && editingFamily) {
-        await apiService.families.updateMember(editingFamily.id, editForm);
+      // 1. EDIT FAMILY
+      if (modalMode === 'edit_family' && selectedFamily) {
+        await apiService.families.update(selectedFamily.id, formData);
+        setFamilies(prev => prev.map(f => f.id === selectedFamily.id ? { ...f, ...formData } : f));
+        setToast({ message: 'Data keluarga diperbarui.', type: 'success' });
+      } 
+      // 2. EDIT MEMBER
+      else if (modalMode === 'edit_member' && selectedMember && selectedFamily) {
+        await apiService.families.updateMember(selectedFamily.id, formData);
         setFamilies(prev => prev.map(f => {
-          if (f.id === editingFamily.id) {
-            return { ...f, anggota: f.anggota.map(m => m.id === editingMember.id ? { ...m, ...editForm } : m) };
+          if (f.id === selectedFamily.id) {
+            return { ...f, anggota: f.anggota.map(m => m.id === selectedMember.id ? { ...m, ...formData } : m) };
           }
           return f;
         }));
-        setToast({ message: 'Perubahan data anggota berhasil disimpan.', type: 'success' });
+        setToast({ message: 'Data anggota diperbarui.', type: 'success' });
       }
-      setIsEditModalOpen(false);
+      // 3. ADD FAMILY
+      else if (modalMode === 'add_family') {
+        const familyPayload = {
+            id: '', 
+            nomor_kk: formData.nomor_kk,
+            alamat_kk: formData.alamat_kk,
+            wilayah_pelayanan: formData.wilayah_pelayanan,
+            status: VerificationStatus.Verified,
+            registrationDate: '',
+            anggota: [{
+                id: '',
+                nama_lengkap: formData.nama_lengkap,
+                nik: formData.nik,
+                tempat_lahir: formData.tempat_lahir,
+                tanggal_lahir: formData.tanggal_lahir,
+                jenis_kelamin: formData.jenis_kelamin,
+                hubungan_keluarga: FamilyRelationship.KepalaKeluarga,
+                status_gerejawi: formData.status_gerejawi,
+                alamat_domisili: formData.alamat_kk,
+                status_pernikahan: formData.status_pernikahan,
+                golongan_darah: formData.golongan_darah,
+                pekerjaan: formData.pekerjaan,
+                nomor_telepon: formData.nomor_telepon
+            }] as Jemaat[]
+        };
+        const newFam = await apiService.families.create(familyPayload, VerificationStatus.Verified);
+        // Refresh full data to get IDs correctly
+        loadData(); 
+        setToast({ message: 'KK Baru berhasil ditambahkan.', type: 'success' });
+      }
+      // 4. ADD MEMBER
+      else if (modalMode === 'add_member' && selectedFamily) {
+        const memberPayload = { ...formData, id: '' } as Jemaat;
+        await apiService.families.addMember(selectedFamily.id, memberPayload);
+        loadData();
+        setToast({ message: 'Anggota baru berhasil ditambahkan.', type: 'success' });
+      }
+
+      setModalMode('none');
     } catch (err: any) {
       setToast({ message: err.message || 'Gagal menyimpan data.', type: 'error' });
     } finally {
@@ -444,91 +508,169 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
     try {
       await apiService.families.updateStatus(family.id, nextStatus, currentUser?.id);
       setFamilies(prev => prev.map(f => f.id === family.id ? { ...f, status: nextStatus } : f));
-      setToast({ message: `Status KK ${family.nomor_kk} berhasil diubah ke ${nextStatus}.`, type: 'success' });
+      setToast({ message: `Status KK diubah ke ${nextStatus}.`, type: 'success' });
     } catch (err: any) {
-      setToast({ message: err.message || 'Gagal mengubah status.', type: 'error' });
+      setToast({ message: err.message, type: 'error' });
     } finally {
       setIsActionLoading(null);
     }
   };
 
+  // Helper render form inputs
+  const renderMemberInputs = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-1 col-span-full">
+        <label className="text-xs font-bold text-slate-500 uppercase">Nama Lengkap</label>
+        <input type="text" required value={formData.nama_lengkap || ''} onChange={e => setFormData({...formData, nama_lengkap: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+        </div>
+        <div className="space-y-1">
+        <label className="text-xs font-bold text-slate-500 uppercase">NIK</label>
+        <input type="text" maxLength={16} value={formData.nik || ''} onChange={e => setFormData({...formData, nik: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm" />
+        </div>
+        {modalMode !== 'add_family' && (
+            <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 uppercase">Hubungan</label>
+            <select value={formData.hubungan_keluarga || ''} onChange={e => setFormData({...formData, hubungan_keluarga: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm">
+                {Object.values(FamilyRelationship).map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+            </div>
+        )}
+        <div className="space-y-1">
+        <label className="text-xs font-bold text-slate-500 uppercase">Tempat Lahir</label>
+        <input type="text" value={formData.tempat_lahir || ''} onChange={e => setFormData({...formData, tempat_lahir: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm" />
+        </div>
+        <div className="space-y-1">
+        <label className="text-xs font-bold text-slate-500 uppercase">Tanggal Lahir</label>
+        <input type="date" value={formData.tanggal_lahir || ''} onChange={e => setFormData({...formData, tanggal_lahir: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm" />
+        </div>
+        <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 uppercase">Jenis Kelamin</label>
+            <select value={formData.jenis_kelamin || Gender.LakiLaki} onChange={e => setFormData({...formData, jenis_kelamin: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm">
+                {Object.values(Gender).map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+        </div>
+        <div className="space-y-1 col-span-full">
+            <label className="text-xs font-bold text-slate-500 uppercase">Alamat Domisili</label>
+            <input type="text" value={formData.alamat_domisili || ''} onChange={e => setFormData({...formData, alamat_domisili: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Isi jika beda dengan KK" />
+        </div>
+        <div className="space-y-1">
+        <label className="text-xs font-bold text-slate-500 uppercase">Status Pernikahan</label>
+        <select value={formData.status_pernikahan || ''} onChange={e => setFormData({...formData, status_pernikahan: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm">
+            {Object.values(MaritalStatus).map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        </div>
+        <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 uppercase">Nomor Telepon</label>
+            <input type="text" value={formData.nomor_telepon || ''} onChange={e => setFormData({...formData, nomor_telepon: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm" />
+        </div>
+        <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 uppercase">Email</label>
+            <input type="email" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm" />
+        </div>
+        <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 uppercase">Pekerjaan</label>
+            <input type="text" value={formData.pekerjaan || ''} onChange={e => setFormData({...formData, pekerjaan: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm" />
+        </div>
+        <div className="space-y-1">
+        <label className="text-xs font-bold text-slate-500 uppercase">Gol. Darah</label>
+        <select value={formData.golongan_darah || ''} onChange={e => setFormData({...formData, golongan_darah: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm">
+            {Object.values(BloodType).map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        </div>
+        <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 uppercase">Catatan Pelayanan</label>
+            <input type="text" value={formData.catatan_pelayanan || ''} onChange={e => setFormData({...formData, catatan_pelayanan: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm" />
+        </div>
+        <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 uppercase">Status Gerejawi</label>
+            <select value={formData.status_gerejawi || ''} onChange={e => setFormData({...formData, status_gerejawi: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm">
+                {Object.values(ChurchStatus).map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+        </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6 px-1 md:px-0 relative pb-20">
       <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".xlsx, .xls, .csv" />
 
-      {/* Toast Notification Local (Dashboard Specific) */}
+      {/* Toast Notification */}
       {toast && (
         <div className={`fixed bottom-6 right-6 z-[200] max-w-sm px-6 py-4 rounded-2xl shadow-2xl border animate-in slide-in-from-bottom-5 duration-300 ${toast.type === 'success' ? 'bg-white border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
            <div className="flex items-center gap-3">
              <div className={`w-2 h-2 rounded-full ${toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></div>
-             <div>
-               <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">{toast.type === 'success' ? 'Sistem Admin' : 'Peringatan Admin'}</p>
-               <p className="text-xs font-semibold leading-relaxed">{toast.message}</p>
-             </div>
+             <div><p className="text-xs font-semibold leading-relaxed">{toast.message}</p></div>
            </div>
         </div>
       )}
 
-      {/* Edit Modal */}
-      {isEditModalOpen && (
+      {/* Unified Modal (Edit & Add) */}
+      {modalMode !== 'none' && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-              <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                 <h3 className="font-bold text-slate-800">Edit Data {editType === 'family' ? 'Keluarga' : 'Anggota'}</h3>
-                 <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+           <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-y-auto max-h-[90vh] animate-in zoom-in-95 duration-200">
+              <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center sticky top-0 z-10">
+                 <h3 className="font-bold text-slate-800">
+                     {modalMode === 'add_family' ? 'Tambah Keluarga Baru' : 
+                      modalMode === 'add_member' ? 'Tambah Anggota Keluarga' :
+                      modalMode === 'edit_family' ? 'Edit Data Keluarga' : 'Edit Data Anggota'}
+                 </h3>
+                 <button onClick={() => setModalMode('none')} className="text-slate-400 hover:text-slate-600">
                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                  </button>
               </div>
-              <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
-                 {editType === 'family' ? (
-                   <>
+              <form onSubmit={handleModalSubmit} className="p-6 space-y-6">
+                 
+                 {/* FORM SECTION: KK DATA (Only for Family modes) */}
+                 {(modalMode === 'add_family' || modalMode === 'edit_family') && (
+                   <div className="space-y-4 border-b border-slate-100 pb-4">
+                      <div className="flex items-center gap-2 mb-2">
+                          <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Data Kartu Keluarga</span>
+                      </div>
                       <div className="space-y-1">
                         <label className="text-xs font-bold text-slate-500 uppercase">Nomor KK</label>
-                        <input type="text" maxLength={16} required value={editForm.nomor_kk || ''} onChange={e => setEditForm({...editForm, nomor_kk: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                        <input type="text" maxLength={16} required value={formData.nomor_kk || ''} onChange={e => setFormData({...formData, nomor_kk: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-bold text-slate-500 uppercase">Alamat Lengkap</label>
-                        <textarea rows={2} required value={editForm.alamat_kk || ''} onChange={e => setEditForm({...editForm, alamat_kk: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                        <textarea rows={2} required value={formData.alamat_kk || ''} onChange={e => setFormData({...formData, alamat_kk: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
                           <label className="text-xs font-bold text-slate-500 uppercase">Wilayah</label>
-                          <select value={editForm.wilayah_pelayanan || ''} onChange={e => setEditForm({...editForm, wilayah_pelayanan: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl outline-none text-sm">
+                          <select value={formData.wilayah_pelayanan || ''} onChange={e => setFormData({...formData, wilayah_pelayanan: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl outline-none text-sm">
                             {Object.values(ServiceSector).map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
                         </div>
-                        <div className="space-y-1">
-                          <label className="text-xs font-bold text-slate-500 uppercase">Status</label>
-                          <select value={editForm.status || ''} onChange={e => setEditForm({...editForm, status: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl outline-none text-sm">
-                            {Object.values(VerificationStatus).map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                   </>
-                 ) : (
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-1 col-span-full">
-                        <label className="text-xs font-bold text-slate-500 uppercase">Nama Lengkap</label>
-                        <input type="text" required value={editForm.nama_lengkap || ''} onChange={e => setEditForm({...editForm, nama_lengkap: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-bold text-slate-500 uppercase">NIK</label>
-                        <input type="text" maxLength={16} value={editForm.nik || ''} onChange={e => setEditForm({...editForm, nik: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-bold text-slate-500 uppercase">Hubungan</label>
-                        <select value={editForm.hubungan_keluarga || ''} onChange={e => setEditForm({...editForm, hubungan_keluarga: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl text-sm">
-                           {Object.values(FamilyRelationship).map(r => <option key={r} value={r}>{r}</option>)}
-                        </select>
+                        {modalMode === 'edit_family' && (
+                            <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-500 uppercase">Status</label>
+                            <select value={formData.status || ''} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full p-2.5 border border-slate-200 rounded-xl outline-none text-sm">
+                                {Object.values(VerificationStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                            </div>
+                        )}
                       </div>
                    </div>
                  )}
+
+                 {/* FORM SECTION: MEMBER DATA */}
+                 {(modalMode === 'add_family' || modalMode === 'add_member' || modalMode === 'edit_member') && (
+                     <div className="space-y-4">
+                         {modalMode === 'add_family' && (
+                             <div className="flex items-center gap-2 mb-2">
+                                <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Data Kepala Keluarga</span>
+                             </div>
+                         )}
+                         {renderMemberInputs()}
+                     </div>
+                 )}
+
                  <div className="pt-4 flex gap-3">
-                    <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl hover:bg-slate-200 transition-colors">Batal</button>
+                    <button type="button" onClick={() => setModalMode('none')} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl hover:bg-slate-200 transition-colors">Batal</button>
                     <button type="submit" disabled={isActionLoading === 'modal-save'} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-2xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
                        {isActionLoading === 'modal-save' ? (
                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                       ) : 'Simpan Perubahan'}
+                       ) : 'Simpan'}
                     </button>
                  </div>
               </form>
@@ -548,11 +690,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
             </div>
             
             <div className="flex flex-wrap items-center gap-2">
+            
+            {/* NEW ADD BUTTON */}
             {activeTab === 'families' && (
-                <div className="flex items-center gap-2 mr-2">
+                <button 
+                    onClick={handleOpenAddFamily}
+                    className="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-200 active:scale-95"
+                >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" /></svg>
+                    Tambah KK Baru
+                </button>
+            )}
+
+            {activeTab === 'families' && (
+                <div className="flex items-center gap-2 mr-2 border-l border-slate-200 pl-4 ml-2">
                     <button 
                         onClick={handleDownloadTemplate}
-                        className="text-[10px] font-bold text-blue-600 hover:underline"
+                        className="text-[10px] font-bold text-slate-500 hover:text-blue-600"
                         title="Download Template Excel"
                     >
                         Template
@@ -560,17 +714,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                     <button 
                         onClick={handleImportClick}
                         disabled={isActionLoading === 'importing'}
-                        className="bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-100 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
-                        title="Import Data Jemaat dari Excel"
+                        className="bg-white text-slate-600 border border-slate-200 px-3 py-2.5 rounded-xl text-xs font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                        title="Import Excel"
                     >
                         {isActionLoading === 'importing' ? (
-                            <div className="w-4 h-4 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
+                            <div className="w-3 h-3 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
                         ) : (
                             <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                             </svg>
                         )}
-                        Import Data
+                        Import
                     </button>
                 </div>
             )}
@@ -579,12 +733,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                 onClick={handleExportExcel} 
                 disabled={activeTab === 'settings' || isActionLoading === 'exporting' || (activeTab === 'families' && filteredFamilies.length === 0) || (activeTab === 'birthdays' && birthdayMembers.length === 0)}
                 className="flex-grow md:flex-none bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 disabled:opacity-50"
-                title={activeTab === 'birthdays' ? "Download Daftar Ulang Tahun" : "Ekspor Seluruh Data"}
+                title="Ekspor Data"
             >
                 {isActionLoading === 'exporting' ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                 ) : <ICONS.Export />}
-                {activeTab === 'birthdays' ? 'Export Ulang Tahun' : 'Export Data'}
+                Export
             </button>
             <button 
                 onClick={loadData} 
@@ -690,9 +844,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                             </div>
 
                             <div className="col-span-3 flex justify-end gap-1" onClick={e => e.stopPropagation()}>
-                            <button onClick={(e) => openEditFamily(f, e)} className="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Ubah Data KK"><ICONS.Edit /></button>
-                            <button onClick={(e) => handleDeleteFamily(f, e)} className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 hover:scale-110 rounded-lg transition-all" title="Hapus Permanen Seluruh Data KK"><ICONS.Trash /></button>
-                            <button onClick={() => setExpandedId(isExpanded ? null : f.id)} className={`p-2 rounded-lg transition-colors ${isExpanded ? 'text-blue-600 bg-blue-50' : 'text-slate-300 hover:text-blue-500'}`} title="Lihat Anggota"><ICONS.Eye /></button>
+                                <button onClick={(e) => handleOpenAddMember(f, e)} className="p-2 text-slate-300 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all" title="Tambah Anggota">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                </button>
+                                <button onClick={(e) => openEditFamily(f, e)} className="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Ubah Data KK"><ICONS.Edit /></button>
+                                <button onClick={(e) => handleDeleteFamily(f, e)} className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 hover:scale-110 rounded-lg transition-all" title="Hapus Permanen Seluruh Data KK"><ICONS.Trash /></button>
+                                <button onClick={() => setExpandedId(isExpanded ? null : f.id)} className={`p-2 rounded-lg transition-colors ${isExpanded ? 'text-blue-600 bg-blue-50' : 'text-slate-300 hover:text-blue-500'}`} title="Lihat Anggota"><ICONS.Eye /></button>
                             </div>
                         </div>
 
@@ -742,6 +899,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
         </>
       )}
 
+      {/* ... Content Birthday & Settings (same as before) ... */}
       {/* --- CONTENT: BIRTHDAY LIST --- */}
       {activeTab === 'birthdays' && (
         <>

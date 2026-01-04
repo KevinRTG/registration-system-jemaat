@@ -19,6 +19,21 @@ export enum ChurchStatus {
   Belum = 'Belum'
 }
 
+export enum MaritalStatus {
+  BelumMenikah = 'Belum Menikah',
+  Menikah = 'Menikah',
+  Janda = 'Janda',
+  Duda = 'Duda'
+}
+
+export enum BloodType {
+  A = 'A',
+  B = 'B',
+  AB = 'AB',
+  O = 'O',
+  Unknown = '-'
+}
+
 export enum ServiceSector {
   A = 'Sektor A',
   B = 'Sektor B',
@@ -37,12 +52,21 @@ export enum VerificationStatus {
 export interface Jemaat {
   id: string;
   nama_lengkap: string;
-  nik: string;
+  nik: string; // Maps to "Nomor Induk"
   tempat_lahir: string;
   tanggal_lahir: string;
   jenis_kelamin: Gender;
-  hubungan_keluarga: FamilyRelationship;
+  hubungan_keluarga: FamilyRelationship; // Maps to "Status Dalam Keluarga"
   status_gerejawi: ChurchStatus;
+  
+  // New Fields
+  alamat_domisili?: string; // Maps to "Alamat" (Member specific)
+  status_pernikahan?: MaritalStatus; // Maps to "Status"
+  nomor_telepon?: string; // Maps to "Nomor Telepon"
+  email?: string; // Maps to "E-mail"
+  pekerjaan?: string; // Maps to "Pekerjaan/Usaha"
+  golongan_darah?: BloodType; // Maps to "Gol. Darah"
+  catatan_pelayanan?: string; // Maps to "Catatan Pelayanan"
 }
 
 export interface Keluarga {

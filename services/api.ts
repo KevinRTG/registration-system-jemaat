@@ -226,7 +226,15 @@ export const apiService = {
           tanggal_lahir: m.tanggal_lahir,
           jenis_kelamin: m.jenis_kelamin,
           hubungan_keluarga: m.hubungan_keluarga,
-          status_gerejawi: m.status_gerejawi
+          status_gerejawi: m.status_gerejawi,
+          // New Fields
+          alamat_domisili: m.alamat_domisili || family.alamat_kk, // Default to KK address if empty
+          status_pernikahan: m.status_pernikahan,
+          nomor_telepon: m.nomor_telepon,
+          email: m.email,
+          pekerjaan: m.pekerjaan,
+          golongan_darah: m.golongan_darah,
+          catatan_pelayanan: m.catatan_pelayanan
         }));
         await supabase.from('members').insert(membersToInsert);
       }
@@ -274,27 +282,23 @@ export const apiService = {
     },
 
     delete: async (id: string): Promise<void> => {
-      // Step 1: Hapus anggota secara eksplisit terlebih dahulu
       const { error: memberError } = await supabase
         .from('members')
         .delete()
         .eq('family_id', id);
 
       if (memberError) {
-        console.error("Member deletion failed:", memberError);
         throw new Error(`Gagal menghapus data anggota keluarga: ${memberError.message}`);
       }
 
-      // Step 2: Hapus keluarga tanpa .select() untuk menghindari error RLS RETURNING
       const { error: familyError } = await supabase
         .from('families')
         .delete()
         .eq('id', id);
       
       if (familyError) {
-        console.error("Family deletion failed:", familyError);
         if (familyError.code === '42501') {
-          throw new Error("Izin Ditolak (RLS): Anda tidak memiliki wewenang untuk menghapus data ini. Pastikan akun Anda terdaftar sebagai Admin di database.");
+          throw new Error("Izin Ditolak (RLS): Anda tidak memiliki wewenang untuk menghapus data ini.");
         }
         throw new Error(`Gagal menghapus data keluarga: ${familyError.message}`);
       }
@@ -309,7 +313,15 @@ export const apiService = {
           tanggal_lahir: member.tanggal_lahir,
           jenis_kelamin: member.jenis_kelamin,
           hubungan_keluarga: member.hubungan_keluarga,
-          status_gerejawi: member.status_gerejawi
+          status_gerejawi: member.status_gerejawi,
+          // New Fields
+          alamat_domisili: member.alamat_domisili,
+          status_pernikahan: member.status_pernikahan,
+          nomor_telepon: member.nomor_telepon,
+          email: member.email,
+          pekerjaan: member.pekerjaan,
+          golongan_darah: member.golongan_darah,
+          catatan_pelayanan: member.catatan_pelayanan
         }]).select().single();
       if (error) throw new Error(error.message);
       return data as Jemaat;
@@ -323,20 +335,27 @@ export const apiService = {
           tanggal_lahir: member.tanggal_lahir,
           jenis_kelamin: member.jenis_kelamin,
           hubungan_keluarga: member.hubungan_keluarga,
-          status_gerejawi: member.status_gerejawi
+          status_gerejawi: member.status_gerejawi,
+          // New Fields
+          alamat_domisili: member.alamat_domisili,
+          status_pernikahan: member.status_pernikahan,
+          nomor_telepon: member.nomor_telepon,
+          email: member.email,
+          pekerjaan: member.pekerjaan,
+          golongan_darah: member.golongan_darah,
+          catatan_pelayanan: member.catatan_pelayanan
         }).eq('id', member.id);
       if (error) throw new Error(error.message);
     },
 
     deleteMember: async (familyId: string, memberId: string): Promise<void> => {
-      // Sama seperti keluarga, hindari .select() untuk menghindari kendala RLS pada operasi DELETE
       const { error } = await supabase
         .from('members')
         .delete()
         .eq('id', memberId);
 
       if (error) {
-        if (error.code === '42501') throw new Error("Izin Ditolak: Anda tidak memiliki akses untuk menghapus anggota keluarga.");
+        if (error.code === '42501') throw new Error("Izin Ditolak.");
         throw new Error(`Gagal menghapus anggota: ${error.message}`);
       }
     }
