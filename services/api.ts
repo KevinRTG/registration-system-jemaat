@@ -105,22 +105,49 @@ export const apiService = {
       const cleanEmail = data.email.trim().toLowerCase();
       const cleanNik = data.nik_kk.replace(/\D/g, '');
       
+      // VALIDASI 1: Cek apakah NIK KK sudah terdaftar di table profiles
+      // Ini mencegah satu NIK KK didaftarkan oleh banyak akun email
+      const { data: existingProfile, error: checkError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('nik_kk', cleanNik)
+        .maybeSingle();
+
+      if (existingProfile) {
+        throw new Error('NIK KK ini sudah terdaftar. Silakan login jika Anda sudah memiliki akun.');
+      }
+
+      // VALIDASI 2: Registrasi Auth (Supabase otomatis cek Email Unik)
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: cleanEmail, 
         password: data.password,
         options: { data: { name: data.name, nik_kk: cleanNik, role: 'user' } }
       });
 
-      if (authError) throw new Error(authError.message);
+      if (authError) {
+        // Mapping pesan error Supabase agar lebih user friendly
+        if (authError.message.includes("User already registered") || authError.status === 422) {
+            throw new Error("Alamat Email ini sudah terdaftar. Silakan login.");
+        }
+        throw new Error(authError.message);
+      }
       
       if (authData.user) {
-        await supabase.from('profiles').upsert({
+        const { error: profileError } = await supabase.from('profiles').upsert({
           id: authData.user.id,
           email: cleanEmail,
           name: data.name,
           nik_kk: cleanNik,
           role: 'user'
         });
+
+        // Double check constraint database jika terjadi race condition
+        if (profileError) {
+           if (profileError.code === '23505') { // Postgres Unique Violation
+              throw new Error("Data NIK atau Email sudah ada dalam sistem.");
+           }
+           handleSupabaseError(profileError, 'pembuatan profil');
+        }
       }
 
       return {
