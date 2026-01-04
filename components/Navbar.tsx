@@ -21,7 +21,12 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onNavigate, acti
               className="flex-shrink-0 flex items-center cursor-pointer" 
               onClick={() => onNavigate('home')}
             >
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold mr-2">G</div>
+              {/* Logo Image Replacement */}
+              <img 
+                src="https://sinodegko.org/wp-content/uploads/2021/08/logo_transparanresize.png" 
+                alt="GKO Cibitung Logo" 
+                className="w-8 h-8 rounded-lg mr-2 object-cover shadow-sm"
+              />
               <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">GKO Cibitung</span>
             </div>
             <div className="hidden md:ml-8 md:flex md:space-x-8">
