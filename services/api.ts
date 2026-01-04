@@ -19,10 +19,14 @@ const ADMIN_WHITELIST = ['vinez6660@gmail.com', 'admin@gkojemaatcibitung'];
 const handleSupabaseError = (error: any, context: string) => {
   if (!error) return;
   console.error(`Error in ${context}:`, error);
+  
   if (error.code === '42501') {
-    throw new Error(`Izin Ditolak (RLS): Anda tidak memiliki akses untuk ${context}. Pastikan Policy Database sudah dikonfigurasi.`);
+    throw new Error(`Izin Ditolak (RLS): Database memblokir akses untuk ${context}. Pastikan Policy dan Trigger Database sudah dikonfigurasi.`);
   }
-  throw new Error(error.message);
+  
+  // Fix [object Object] error by properly stringifying objects if message is missing
+  const message = error.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+  throw new Error(message);
 };
 
 export const apiService = {
@@ -53,6 +57,17 @@ export const apiService = {
           .select('*')
           .eq('id', session.user.id)
           .maybeSingle();
+
+        // Jika profile belum ada (misal race condition trigger), gunakan metadata dari session
+        if (!profile) {
+            profile = {
+                id: session.user.id,
+                email: email,
+                name: session.user.user_metadata?.name || 'User',
+                nik_kk: session.user.user_metadata?.nik_kk,
+                role: 'user'
+            };
+        }
 
         if (isWhitelisted && (!profile || profile.role !== 'admin')) {
           const profileUpdate = {
@@ -105,49 +120,57 @@ export const apiService = {
       const cleanEmail = data.email.trim().toLowerCase();
       const cleanNik = data.nik_kk.replace(/\D/g, '');
       
-      // VALIDASI 1: Cek apakah NIK KK sudah terdaftar di table profiles
-      // Ini mencegah satu NIK KK didaftarkan oleh banyak akun email
+      // VALIDASI 1: Cek NIK di table profiles
       const { data: existingProfile, error: checkError } = await supabase
         .from('profiles')
         .select('id')
         .eq('nik_kk', cleanNik)
         .maybeSingle();
 
+      if (checkError && checkError.code !== 'PGRST116') {
+         // Jika error selain data not found, log saja warning agar tidak blocking flow registrasi
+         console.warn("NIK Check Warning:", checkError);
+      }
+
       if (existingProfile) {
         throw new Error('NIK KK ini sudah terdaftar. Silakan login jika Anda sudah memiliki akun.');
       }
 
-      // VALIDASI 2: Registrasi Auth (Supabase otomatis cek Email Unik)
+      // VALIDASI 2: Registrasi Auth dengan Metadata
+      // Metadata ini akan dibaca oleh Trigger SQL untuk membuat row di tabel profiles secara otomatis
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: cleanEmail, 
         password: data.password,
-        options: { data: { name: data.name, nik_kk: cleanNik, role: 'user' } }
+        options: { 
+            data: { 
+                name: data.name, 
+                nik_kk: cleanNik, 
+                role: 'user' 
+            } 
+        }
       });
 
       if (authError) {
-        // Mapping pesan error Supabase agar lebih user friendly
         if (authError.message.includes("User already registered") || authError.status === 422) {
             throw new Error("Alamat Email ini sudah terdaftar. Silakan login.");
         }
         throw new Error(authError.message);
       }
       
-      if (authData.user) {
-        const { error: profileError } = await supabase.from('profiles').upsert({
-          id: authData.user.id,
-          email: cleanEmail,
-          name: data.name,
-          nik_kk: cleanNik,
-          role: 'user'
-        });
+      // PENTING: Jangan lakukan INSERT ke profiles secara manual di sini.
+      // SQL Trigger 'on_auth_user_created' yang akan menanganinya.
+      // Ini menghindari error RLS saat email confirmation aktif (karena session masih null).
 
-        // Double check constraint database jika terjadi race condition
-        if (profileError) {
-           if (profileError.code === '23505') { // Postgres Unique Violation
-              throw new Error("Data NIK atau Email sudah ada dalam sistem.");
-           }
-           handleSupabaseError(profileError, 'pembuatan profil');
-        }
+      // Jika user berhasil dibuat tapi session null, berarti butuh konfirmasi email
+      if (authData.user && !authData.session) {
+         // Return dummy user object agar UI menampilkan sukses
+         return {
+            id: authData.user.id,
+            name: data.name,
+            email: cleanEmail,
+            nik_kk: cleanNik,
+            role: 'user'
+         };
       }
 
       return {
