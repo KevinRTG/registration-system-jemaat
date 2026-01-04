@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { Keluarga, ServiceSector, FamilyRelationship, Jemaat, Gender, ChurchStatus, VerificationStatus, User } from '../types';
 import { ICONS } from '../constants';
 import { apiService } from '../services/api';
+import SettingsPanel from './SettingsPanel';
 
 interface AdminDashboardProps {
   currentUser?: User | null;
@@ -18,7 +19,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
   const [families, setFamilies] = useState<Keluarga[]>([]);
   
   // View State
-  const [activeTab, setActiveTab] = useState<'families' | 'birthdays'>('families');
+  const [activeTab, setActiveTab] = useState<'families' | 'birthdays' | 'settings'>('families');
   
   // Filter State - Families
   const [searchTerm, setSearchTerm] = useState('');
@@ -54,6 +55,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
       return () => clearTimeout(timer);
     }
   }, [toast]);
+
+  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
+      setToast({ message, type });
+  };
 
   const loadData = async () => {
     setIsLoading(true);
@@ -571,7 +576,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
 
             <button 
                 onClick={handleExportExcel} 
-                disabled={isActionLoading === 'exporting' || (activeTab === 'families' && filteredFamilies.length === 0) || (activeTab === 'birthdays' && birthdayMembers.length === 0)}
+                disabled={activeTab === 'settings' || isActionLoading === 'exporting' || (activeTab === 'families' && filteredFamilies.length === 0) || (activeTab === 'birthdays' && birthdayMembers.length === 0)}
                 className="flex-grow md:flex-none bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 disabled:opacity-50"
                 title={activeTab === 'birthdays' ? "Download Daftar Ulang Tahun" : "Ekspor Seluruh Data"}
             >
@@ -591,7 +596,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex p-1 bg-slate-100 rounded-xl gap-1 max-w-md">
+        <div className="flex p-1 bg-slate-100 rounded-xl gap-1 max-w-lg">
             <button 
                 onClick={() => setActiveTab('families')} 
                 className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === 'families' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
@@ -602,7 +607,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                 onClick={() => setActiveTab('birthdays')} 
                 className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === 'birthdays' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
-                Ulang Tahun Jemaat
+                Ulang Tahun
+            </button>
+            <button 
+                onClick={() => setActiveTab('settings')} 
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === 'settings' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+                Pengaturan
             </button>
         </div>
       </div>
@@ -794,6 +805,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                 </div>
             </div>
         </>
+      )}
+
+      {/* --- CONTENT: SETTINGS --- */}
+      {activeTab === 'settings' && currentUser && (
+        <div className="max-w-2xl mx-auto">
+           <SettingsPanel currentUser={currentUser} onShowNotification={showNotification} />
+        </div>
       )}
 
       <div className="text-center pt-10">

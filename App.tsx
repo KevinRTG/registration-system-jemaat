@@ -203,6 +203,7 @@ const App: React.FC = () => {
                   currentUser={currentUser} 
                   onNavigate={navigate} 
                   refreshKey={dashboardRefreshKey}
+                  onShowNotification={showNotification}
                 />
             </div>
         )}

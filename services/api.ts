@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js';
 import { Keluarga, User, UserAccount, VerificationStatus, Jemaat } from '../types';
 
@@ -136,6 +137,25 @@ export const apiService = {
     updateProfile: async (userId: string, updates: any) => {
       const { error } = await supabase.from('profiles').update(updates).eq('id', userId);
       if (error) throw new Error(error.message);
+    },
+
+    updateAccount: async (params: { password?: string, name?: string }) => {
+      const updates: any = {};
+      if (params.password) updates.password = params.password;
+      if (params.name) updates.data = { name: params.name };
+
+      if (Object.keys(updates).length > 0) {
+        const { error } = await supabase.auth.updateUser(updates);
+        if (error) throw new Error(error.message);
+      }
+      
+      // Sync profile table if name changed
+      if (params.name) {
+         const { data: { user } } = await supabase.auth.getUser();
+         if (user) {
+             await supabase.from('profiles').update({ name: params.name }).eq('id', user.id);
+         }
+      }
     }
   },
 
