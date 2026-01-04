@@ -15,6 +15,16 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // Emergency Admin Whitelist - Hardcoded for immediate access
 const ADMIN_WHITELIST = ['vinez6660@gmail.com', 'admin@gkojemaatcibitung'];
 
+// Helper to handle Supabase errors specifically RLS
+const handleSupabaseError = (error: any, context: string) => {
+  if (!error) return;
+  console.error(`Error in ${context}:`, error);
+  if (error.code === '42501') {
+    throw new Error(`Izin Ditolak (RLS): Anda tidak memiliki akses untuk ${context}. Pastikan Policy Database sudah dikonfigurasi.`);
+  }
+  throw new Error(error.message);
+};
+
 export const apiService = {
   // --- AUTHENTICATION CONTROLLER ---
   auth: {
@@ -23,7 +33,6 @@ export const apiService = {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {
-          // Handle specific refresh token errors by clearing the session
           if (sessionError.message && (
              sessionError.message.includes("Refresh Token") || 
              sessionError.message.includes("refresh_token")
@@ -39,14 +48,12 @@ export const apiService = {
         const email = session.user.email?.toLowerCase().trim() || '';
         const isWhitelisted = ADMIN_WHITELIST.includes(email);
 
-        // Fetch current DB profile
         let { data: profile } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', session.user.id)
           .maybeSingle();
 
-        // Agresif: Jika email ada di whitelist tapi role di DB bukan admin, paksa update
         if (isWhitelisted && (!profile || profile.role !== 'admin')) {
           const profileUpdate = {
             id: session.user.id,
@@ -136,7 +143,7 @@ export const apiService = {
 
     updateProfile: async (userId: string, updates: any) => {
       const { error } = await supabase.from('profiles').update(updates).eq('id', userId);
-      if (error) throw new Error(error.message);
+      if (error) handleSupabaseError(error, 'update profil');
     },
 
     updateAccount: async (params: { password?: string, name?: string }) => {
@@ -149,7 +156,6 @@ export const apiService = {
         if (error) throw new Error(error.message);
       }
       
-      // Sync profile table if name changed
       if (params.name) {
          const { data: { user } } = await supabase.auth.getUser();
          if (user) {
@@ -167,7 +173,7 @@ export const apiService = {
         .select(`*, anggota:members(*)`)
         .order('registration_date', { ascending: false });
 
-      if (error) throw new Error(error.message);
+      if (error) handleSupabaseError(error, 'mengambil data keluarga');
       return (data || []).map(f => ({ 
         ...f, 
         registrationDate: f.registration_date,
@@ -182,7 +188,7 @@ export const apiService = {
         .eq('nomor_kk', nomor_kk)
         .maybeSingle();
 
-      if (error) throw new Error(error.message);
+      if (error) handleSupabaseError(error, 'mencari data KK');
       if (!data) return null;
       return { 
         ...data, 
@@ -193,12 +199,13 @@ export const apiService = {
 
     create: async (family: Keluarga, initialStatus: VerificationStatus = VerificationStatus.Pending): Promise<Keluarga> => {
       // Cek duplikasi nomor KK
-      const { data: existing } = await supabase
+      const { data: existing, error: checkError } = await supabase
         .from('families')
         .select('id')
         .eq('nomor_kk', family.nomor_kk)
         .maybeSingle();
 
+      if (checkError) handleSupabaseError(checkError, 'cek duplikasi KK');
       if (existing) {
         throw new Error(`Nomor KK ${family.nomor_kk} sudah terdaftar di sistem.`);
       }
@@ -215,7 +222,7 @@ export const apiService = {
         }])
         .select().single();
 
-      if (familyError) throw new Error(familyError.message);
+      if (familyError) handleSupabaseError(familyError, 'menyimpan data keluarga');
 
       if (family.anggota.length > 0) {
         const membersToInsert = family.anggota.map(m => ({
@@ -227,8 +234,7 @@ export const apiService = {
           jenis_kelamin: m.jenis_kelamin,
           hubungan_keluarga: m.hubungan_keluarga,
           status_gerejawi: m.status_gerejawi,
-          // New Fields
-          alamat_domisili: m.alamat_domisili || family.alamat_kk, // Default to KK address if empty
+          alamat_domisili: m.alamat_domisili || family.alamat_kk,
           status_pernikahan: m.status_pernikahan,
           nomor_telepon: m.nomor_telepon,
           email: m.email,
@@ -236,7 +242,9 @@ export const apiService = {
           golongan_darah: m.golongan_darah,
           catatan_pelayanan: m.catatan_pelayanan
         }));
-        await supabase.from('members').insert(membersToInsert);
+        
+        const { error: memberError } = await supabase.from('members').insert(membersToInsert);
+        if (memberError) handleSupabaseError(memberError, 'menyimpan anggota keluarga');
       }
       return { ...familyData, registrationDate: familyData.registration_date };
     },
@@ -252,7 +260,7 @@ export const apiService = {
         })
         .eq('id', id);
       
-      if (error) throw new Error(`Gagal memperbarui data keluarga: ${error.message}`);
+      if (error) handleSupabaseError(error, 'memperbarui keluarga');
     },
 
     updateStatus: async (id: string, status: VerificationStatus, adminId?: string): Promise<void> => {
@@ -272,9 +280,7 @@ export const apiService = {
         .eq('id', id)
         .select('id, status');
 
-      if (error) {
-        throw new Error(`Gagal update status: ${error.message}`);
-      }
+      if (error) handleSupabaseError(error, 'memperbarui status');
       
       if (!data || data.length === 0) {
         throw new Error("Update gagal. Pastikan Anda memiliki hak akses Admin.");
@@ -287,21 +293,14 @@ export const apiService = {
         .delete()
         .eq('family_id', id);
 
-      if (memberError) {
-        throw new Error(`Gagal menghapus data anggota keluarga: ${memberError.message}`);
-      }
+      if (memberError) handleSupabaseError(memberError, 'menghapus anggota');
 
       const { error: familyError } = await supabase
         .from('families')
         .delete()
         .eq('id', id);
       
-      if (familyError) {
-        if (familyError.code === '42501') {
-          throw new Error("Izin Ditolak (RLS): Anda tidak memiliki wewenang untuk menghapus data ini.");
-        }
-        throw new Error(`Gagal menghapus data keluarga: ${familyError.message}`);
-      }
+      if (familyError) handleSupabaseError(familyError, 'menghapus keluarga');
     },
 
     addMember: async (familyId: string, member: Jemaat): Promise<Jemaat> => {
@@ -314,7 +313,6 @@ export const apiService = {
           jenis_kelamin: member.jenis_kelamin,
           hubungan_keluarga: member.hubungan_keluarga,
           status_gerejawi: member.status_gerejawi,
-          // New Fields
           alamat_domisili: member.alamat_domisili,
           status_pernikahan: member.status_pernikahan,
           nomor_telepon: member.nomor_telepon,
@@ -323,7 +321,8 @@ export const apiService = {
           golongan_darah: member.golongan_darah,
           catatan_pelayanan: member.catatan_pelayanan
         }]).select().single();
-      if (error) throw new Error(error.message);
+      
+      if (error) handleSupabaseError(error, 'menambah anggota');
       return data as Jemaat;
     },
     
@@ -336,7 +335,6 @@ export const apiService = {
           jenis_kelamin: member.jenis_kelamin,
           hubungan_keluarga: member.hubungan_keluarga,
           status_gerejawi: member.status_gerejawi,
-          // New Fields
           alamat_domisili: member.alamat_domisili,
           status_pernikahan: member.status_pernikahan,
           nomor_telepon: member.nomor_telepon,
@@ -345,7 +343,8 @@ export const apiService = {
           golongan_darah: member.golongan_darah,
           catatan_pelayanan: member.catatan_pelayanan
         }).eq('id', member.id);
-      if (error) throw new Error(error.message);
+      
+      if (error) handleSupabaseError(error, 'memperbarui anggota');
     },
 
     deleteMember: async (familyId: string, memberId: string): Promise<void> => {
@@ -354,10 +353,7 @@ export const apiService = {
         .delete()
         .eq('id', memberId);
 
-      if (error) {
-        if (error.code === '42501') throw new Error("Izin Ditolak.");
-        throw new Error(`Gagal menghapus anggota: ${error.message}`);
-      }
+      if (error) handleSupabaseError(error, 'menghapus anggota');
     }
   }
 };

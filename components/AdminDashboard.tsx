@@ -164,41 +164,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
 
   const normalizeString = (str: any) => String(str || '').trim();
   
-  // Helper khusus untuk parsing "Tempat, DD Bulan YYYY" (Format Indonesia)
   const parseIndonesianTTL = (rawTTL: string) => {
     if (!rawTTL) return { tempat: '', tanggal: '' };
-    
-    // Split by comma first (e.g. "Jakarta, 24 Februari 1970")
     const parts = rawTTL.split(',');
     if (parts.length < 2) return { tempat: rawTTL, tanggal: '' };
 
     const tempat = parts[0].trim();
-    let tanggalStr = parts.slice(1).join(',').trim(); // "24 Februari 1970"
+    let tanggalStr = parts.slice(1).join(',').trim(); 
 
-    // Mapping Nama Bulan Indonesia ke Index (0-11)
     const monthMap: {[key: string]: string} = {
         'januari': '01', 'februari': '02', 'maret': '03', 'april': '04', 'mei': '05', 'juni': '06',
         'juli': '07', 'agustus': '08', 'september': '09', 'oktober': '10', 'november': '11', 'desember': '12',
         'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'jun': '06', 'jul': '07', 'agu': '08', 'sep': '09', 'okt': '10', 'nov': '11', 'des': '12'
     };
 
-    // Coba parsing format "24 Februari 1970" atau "24-02-1970"
     let dateObj = new Date(tanggalStr);
     
-    // Jika gagal parsing standar, coba manual replacement bulan Indo
     if (isNaN(dateObj.getTime())) {
         const lowerDate = tanggalStr.toLowerCase();
         for (const [indo, digit] of Object.entries(monthMap)) {
             if (lowerDate.includes(indo)) {
-                // Replace "Februari" with "02", etc.
-                // Assuming format DD Month YYYY -> DD-MM-YYYY roughly for parsing
-                const standardDate = lowerDate.replace(indo, digit).replace(/ /g, '-');
-                // Need to ensure format YYYY-MM-DD for HTML input
                 const dateParts = lowerDate.split(' ');
                 if (dateParts.length >= 3) {
                     const day = dateParts[0].padStart(2, '0');
                     const month = digit;
-                    const year = dateParts[dateParts.length - 1]; // Year usually last
+                    const year = dateParts[dateParts.length - 1]; 
                     return { tempat, tanggal: `${year}-${month}-${day}` };
                 }
             }
@@ -230,11 +220,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
             const wb = XLSX.read(bstr, { type: 'binary' });
             const wsname = wb.SheetNames[0];
             const ws = wb.Sheets[wsname];
-            
-            // Konversi ke JSON Array of Arrays untuk mencari header
             const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
             
-            // Cari baris header (baris yang mengandung "Nomor KK")
             let headerRowIndex = 0;
             for (let i = 0; i < Math.min(10, rawData.length); i++) {
                 if (rawData[i].some((cell: any) => String(cell).toLowerCase().includes('nomor kk'))) {
@@ -243,7 +230,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                 }
             }
 
-            // Parse ulang menggunakan headerRowIndex yang ditemukan
             const data: any[] = XLSX.utils.sheet_to_json(ws, { range: headerRowIndex });
 
             if (data.length === 0) throw new Error("File kosong atau format salah.");
@@ -254,13 +240,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                 const noKK = normalizeString(row['Nomor KK'] || row['NO_KK']);
                 if (!noKK) return; 
                 
-                // --- FAMILY LEVEL DATA ---
                 if (!groups[noKK]) {
-                    // Logic Default Wilayah: Jika tidak ada, set 'Belum'
                     let wilayahRaw = normalizeString(row['Wilayah'] || row['WILAYAH']);
                     let finalWilayah = ServiceSector.Belum;
-                    
-                    // Coba match dengan enum
                     if (wilayahRaw && Object.values(ServiceSector).includes(wilayahRaw as ServiceSector)) {
                         finalWilayah = wilayahRaw as ServiceSector;
                     }
@@ -276,13 +258,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                     };
                 }
 
-                // --- MEMBER LEVEL DATA ---
-                // Parse TTL
                 const rawTTL = normalizeString(row['Tempat Tanggal Lahir'] || row['TEMPAT_TGL_LAHIR']);
                 let tempatLahir = normalizeString(row['Tempat Lahir'] || row['TEMPAT_LAHIR']);
                 let tanggalLahir = parseSimpleDate(row['Tanggal Lahir'] || row['TGL_LAHIR']);
 
-                // Jika kolom gabungan (TTL) ada, override
                 if (rawTTL && (!tempatLahir || !tanggalLahir)) {
                     const parsed = parseIndonesianTTL(rawTTL);
                     tempatLahir = parsed.tempat;
@@ -298,8 +277,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                     tanggal_lahir: tanggalLahir,
                     hubungan_keluarga: normalizeString(row['Status Dalam Keluarga'] || row['HUBUNGAN']) as FamilyRelationship || FamilyRelationship.Lainnya,
                     status_gerejawi: normalizeString(row['Status Gerejawi'] || row['STATUS_GEREJAWI']) as ChurchStatus || ChurchStatus.Belum,
-                    
-                    // Extra Fields
                     alamat_domisili: normalizeString(row['Alamat'] || row['ALAMAT']),
                     status_pernikahan: normalizeString(row['Status'] || row['STATUS_PERNIKAHAN']) as MaritalStatus || MaritalStatus.BelumMenikah,
                     nomor_telepon: normalizeString(row['Nomor Telepon'] || row['NO_TELEPON']),
@@ -319,6 +296,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                     successCount++;
                 } catch (err: any) {
                     console.error(`Gagal import KK ${kk}:`, err);
+                    
+                    // STOP LOOP IF RLS ERROR DETECTED
+                    if (err.message && err.message.includes('Izin Ditolak (RLS)')) {
+                       setToast({ message: "Import Dihentikan: Anda tidak memiliki izin untuk menyimpan data. Pastikan konfigurasi database sudah benar.", type: 'error' });
+                       setIsActionLoading(null);
+                       if (fileInputRef.current) fileInputRef.current.value = '';
+                       return;
+                    }
+                    
                     failCount++;
                 }
             }
