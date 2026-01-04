@@ -82,17 +82,29 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
         
         const newAccount: UserAccount = { email, nik_kk: nikKk, password, name };
         user = await apiService.auth.register(newAccount);
-        onShowNotification('Registrasi Berhasil! Akun Anda telah dibuat.', 'success');
+        
+        // Pesan Sukses yang lebih informatif untuk mengecek email
+        const registerMsg = 'Registrasi Berhasil! Silakan cek Email Anda (Inbox/Spam) untuk verifikasi akun.';
+        onShowNotification(registerMsg, 'success');
+        
+        // Kita tetap memanggil onSuccess agar flow aplikasi berlanjut, 
+        // tapi user mungkin belum bisa melakukan aksi yang butuh auth penuh sampai confirm email.
         onSuccess(user);
       }
       
     } catch (err: any) {
       console.error("Form Error:", err);
       let msg = err.message || 'Terjadi kesalahan sistem.';
-      if (msg.includes('Invalid login credentials')) msg = 'Email atau Password salah. Cek kembali.';
+      
+      // --- PENANGANAN ERROR SPESIFIK UNTUK EMAIL CONFIRMATION ---
+      if (msg.includes('Email not confirmed')) {
+          msg = 'Akun belum aktif. Silakan cek Inbox atau Spam email Anda dan klik link konfirmasi dari GKO Cibitung.';
+      } 
+      else if (msg.includes('Invalid login credentials')) {
+          msg = 'Email atau Password salah. Jika baru mendaftar, pastikan Anda sudah memverifikasi email.';
+      }
+
       setError(msg);
-      // Optional: show toast for error too
-      // onShowNotification(msg, 'error'); 
     } finally {
       setLoading(false);
     }
@@ -127,8 +139,9 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
       </div>
 
       {error && (
-        <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm rounded-r-xl font-medium animate-pulse">
-          {error}
+        <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm rounded-r-xl font-medium animate-pulse flex flex-col gap-1">
+          <span className="font-bold">Gagal Masuk:</span>
+          <span>{error}</span>
         </div>
       )}
 
