@@ -76,19 +76,17 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
         onShowNotification('Berhasil Masuk. Selamat Datang!', 'success');
         onSuccess(user);
       } else if (view === 'register') {
+        // Validasi Frontend
         if (password.length < 6) throw new Error('Password terlalu pendek (min. 6 karakter).');
         if (nikKk.length !== 16) throw new Error('NIK KK harus 16 digit angka.');
-        if (!email.includes('@')) throw new Error('Email tidak valid.');
+        if (!email.includes('@')) throw new Error('Format email tidak valid.');
+        if (name.length < 3) throw new Error('Nama lengkap terlalu pendek.');
         
         const newAccount: UserAccount = { email, nik_kk: nikKk, password, name };
         user = await apiService.auth.register(newAccount);
         
-        // Pesan Sukses yang lebih informatif untuk mengecek email
         const registerMsg = 'Registrasi Berhasil! Silakan cek Email Anda (Inbox/Spam) untuk verifikasi akun.';
         onShowNotification(registerMsg, 'success');
-        
-        // Kita tetap memanggil onSuccess agar flow aplikasi berlanjut, 
-        // tapi user mungkin belum bisa melakukan aksi yang butuh auth penuh sampai confirm email.
         onSuccess(user);
       }
       
@@ -96,15 +94,20 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
       console.error("Form Error:", err);
       let msg = err.message || 'Terjadi kesalahan sistem.';
       
-      // --- PENANGANAN ERROR SPESIFIK UNTUK EMAIL CONFIRMATION ---
+      // Handle Specific Errors
       if (msg.includes('Email not confirmed')) {
           msg = 'Akun belum aktif. Silakan cek Inbox atau Spam email Anda dan klik link konfirmasi dari GKO Cibitung.';
       } 
       else if (msg.includes('Invalid login credentials')) {
           msg = 'Email atau Password salah. Jika baru mendaftar, pastikan Anda sudah memverifikasi email.';
       }
+      // Error dari api.ts (NIK/Email sudah ada) akan langsung ditampilkan karena masuk ke blok ini
 
       setError(msg);
+      // Opsional: Tampilkan notifikasi toast juga untuk error penting
+      if (view === 'register') {
+          onShowNotification(msg, 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -140,7 +143,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
 
       {error && (
         <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 text-sm rounded-r-xl font-medium animate-pulse flex flex-col gap-1">
-          <span className="font-bold">Gagal Masuk:</span>
+          <span className="font-bold">Gagal:</span>
           <span>{error}</span>
         </div>
       )}

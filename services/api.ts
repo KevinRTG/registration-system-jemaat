@@ -120,24 +120,33 @@ export const apiService = {
       const cleanEmail = data.email.trim().toLowerCase();
       const cleanNik = data.nik_kk.replace(/\D/g, '');
       
-      // VALIDASI 1: Cek NIK di table profiles
-      const { data: existingProfile, error: checkError } = await supabase
+      // VALIDASI: Cek apakah Email ATAU NIK sudah ada di database profiles
+      // Menggunakan .or() untuk efisiensi satu kali query
+      const { data: conflicts, error: checkError } = await supabase
         .from('profiles')
-        .select('id')
-        .eq('nik_kk', cleanNik)
-        .maybeSingle();
+        .select('email, nik_kk')
+        .or(`email.eq.${cleanEmail},nik_kk.eq.${cleanNik}`);
 
-      if (checkError && checkError.code !== 'PGRST116') {
-         // Jika error selain data not found, log saja warning agar tidak blocking flow registrasi
-         console.warn("NIK Check Warning:", checkError);
+      if (checkError) {
+         // Jika error karena RLS (42501), kita log warning tapi lanjut mencoba register auth
+         // agar tidak blocking jika user admin lupa setup policy public read.
+         if (checkError.code !== 'PGRST116') {
+             console.warn("Validation Warning (RLS might be blocking):", checkError.message);
+         }
       }
 
-      if (existingProfile) {
-        throw new Error('NIK KK ini sudah terdaftar. Silakan login jika Anda sudah memiliki akun.');
+      // Analisa hasil konflik
+      if (conflicts && conflicts.length > 0) {
+        const conflict = conflicts[0];
+        if (conflict.nik_kk === cleanNik) {
+           throw new Error('NIK KK ini sudah terdaftar. Silakan login atau gunakan NIK lain.');
+        }
+        if (conflict.email === cleanEmail) {
+           throw new Error('Alamat Email ini sudah terdaftar. Silakan login.');
+        }
       }
 
-      // VALIDASI 2: Registrasi Auth dengan Metadata
-      // Metadata ini akan dibaca oleh Trigger SQL untuk membuat row di tabel profiles secara otomatis
+      // Lanjut ke Auth Registrasi jika lolos validasi database
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: cleanEmail, 
         password: data.password,
@@ -152,18 +161,13 @@ export const apiService = {
 
       if (authError) {
         if (authError.message.includes("User already registered") || authError.status === 422) {
-            throw new Error("Alamat Email ini sudah terdaftar. Silakan login.");
+            throw new Error("Alamat Email ini sudah terdaftar di sistem otentikasi. Silakan login.");
         }
         throw new Error(authError.message);
       }
       
-      // PENTING: Jangan lakukan INSERT ke profiles secara manual di sini.
-      // SQL Trigger 'on_auth_user_created' yang akan menanganinya.
-      // Ini menghindari error RLS saat email confirmation aktif (karena session masih null).
-
       // Jika user berhasil dibuat tapi session null, berarti butuh konfirmasi email
       if (authData.user && !authData.session) {
-         // Return dummy user object agar UI menampilkan sukses
          return {
             id: authData.user.id,
             name: data.name,
@@ -248,7 +252,7 @@ export const apiService = {
     },
 
     create: async (family: Keluarga, initialStatus: VerificationStatus = VerificationStatus.Pending): Promise<Keluarga> => {
-      // Cek duplikasi nomor KK
+      // Cek duplikasi nomor KK di tabel families
       const { data: existing, error: checkError } = await supabase
         .from('families')
         .select('id')
