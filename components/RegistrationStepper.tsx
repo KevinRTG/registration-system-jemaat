@@ -7,9 +7,10 @@ import { apiService } from '../services/api';
 interface RegistrationStepperProps {
   onComplete: (newNik?: string) => void;
   currentUser: User | null;
+  onShowNotification: (msg: string, type: 'success' | 'error') => void;
 }
 
-const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, currentUser }) => {
+const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, currentUser, onShowNotification }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [kkData, setKkData] = useState({
     nomor_kk: '',
@@ -110,7 +111,7 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
     if (!validateStep(3)) return;
 
     if (!currentUser) {
-      alert('Sesi Anda habis. Silakan login kembali.');
+      onShowNotification('Sesi Anda habis. Silakan login kembali.', 'error');
       return;
     }
 
@@ -131,13 +132,13 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
       // 2. Update profile user dengan NIK KK yang baru didaftarkan
       await apiService.auth.updateProfile(currentUser.id, { nik_kk: kkData.nomor_kk });
 
-      alert('Pendaftaran Berhasil! Data Anda telah masuk ke sistem dan menunggu verifikasi admin.');
+      onShowNotification('Pendaftaran Berhasil! Data Anda telah masuk ke sistem dan menunggu verifikasi admin.', 'success');
       
       // 3. Panggil callback dengan NIK baru agar App.tsx bisa update state
       onComplete(kkData.nomor_kk);
     } catch (error) {
       console.error(error);
-      alert('Terjadi kesalahan saat menyimpan pendaftaran. Mohon cek koneksi Anda.');
+      onShowNotification('Terjadi kesalahan saat menyimpan pendaftaran. Mohon cek koneksi Anda.', 'error');
     } finally {
       setIsSubmitting(false);
     }

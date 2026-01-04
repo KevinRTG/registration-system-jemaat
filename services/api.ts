@@ -1,6 +1,4 @@
-
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenAI } from "@google/genai";
 import { Keluarga, User, UserAccount, VerificationStatus, Jemaat } from '../types';
 
 /**
@@ -173,15 +171,27 @@ export const apiService = {
       } as Keluarga;
     },
 
-    create: async (family: Keluarga): Promise<Keluarga> => {
+    create: async (family: Keluarga, initialStatus: VerificationStatus = VerificationStatus.Pending): Promise<Keluarga> => {
+      // Cek duplikasi nomor KK
+      const { data: existing } = await supabase
+        .from('families')
+        .select('id')
+        .eq('nomor_kk', family.nomor_kk)
+        .maybeSingle();
+
+      if (existing) {
+        throw new Error(`Nomor KK ${family.nomor_kk} sudah terdaftar di sistem.`);
+      }
+
       const { data: familyData, error: familyError } = await supabase
         .from('families')
         .insert([{
           nomor_kk: family.nomor_kk,
           alamat_kk: family.alamat_kk,
           wilayah_pelayanan: family.wilayah_pelayanan,
-          status: VerificationStatus.Pending,
-          registration_date: new Date().toISOString()
+          status: initialStatus,
+          registration_date: new Date().toISOString(),
+          verified_at: initialStatus === VerificationStatus.Verified ? new Date().toISOString() : null
         }])
         .select().single();
 
@@ -192,6 +202,7 @@ export const apiService = {
           family_id: familyData.id,
           nama_lengkap: m.nama_lengkap,
           nik: m.nik,
+          tempat_lahir: m.tempat_lahir,
           tanggal_lahir: m.tanggal_lahir,
           jenis_kelamin: m.jenis_kelamin,
           hubungan_keluarga: m.hubungan_keluarga,
@@ -274,6 +285,7 @@ export const apiService = {
           family_id: familyId,
           nama_lengkap: member.nama_lengkap,
           nik: member.nik,
+          tempat_lahir: member.tempat_lahir,
           tanggal_lahir: member.tanggal_lahir,
           jenis_kelamin: member.jenis_kelamin,
           hubungan_keluarga: member.hubungan_keluarga,
@@ -287,6 +299,7 @@ export const apiService = {
       const { error } = await supabase.from('members').update({
           nama_lengkap: member.nama_lengkap,
           nik: member.nik,
+          tempat_lahir: member.tempat_lahir,
           tanggal_lahir: member.tanggal_lahir,
           jenis_kelamin: member.jenis_kelamin,
           hubungan_keluarga: member.hubungan_keluarga,
@@ -305,22 +318,6 @@ export const apiService = {
       if (error) {
         if (error.code === '42501') throw new Error("Izin Ditolak: Anda tidak memiliki akses untuk menghapus anggota keluarga.");
         throw new Error(`Gagal menghapus anggota: ${error.message}`);
-      }
-    }
-  },
-
-  // --- AI ---
-  ai: {
-    getWelcomeMessage: async (): Promise<string> => {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: 'Tuliskan satu kalimat sambutan hangat untuk jemaat GKO Cibitung.',
-        });
-        return response.text || 'Selamat datang di GKO Cibitung.';
-      } catch (error) {
-        return 'Selamat datang di GKO Cibitung.';
       }
     }
   }

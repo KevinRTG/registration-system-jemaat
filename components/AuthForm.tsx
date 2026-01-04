@@ -7,11 +7,12 @@ interface AuthFormProps {
   onSuccess: (user: User) => void;
   isLogin: boolean;
   setIsLogin: (val: boolean) => void;
+  onShowNotification: (msg: string, type: 'success' | 'error') => void;
 }
 
 type AuthView = 'login' | 'register' | 'forgot' | 'admin';
 
-const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin }) => {
+const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onShowNotification }) => {
   const [view, setView] = useState<AuthView>(isLogin ? 'login' : 'register');
   
   useEffect(() => {
@@ -37,7 +38,6 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin }) =
   };
 
   const handleNikChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Hanya izinkan angka
     const val = e.target.value.replace(/\D/g, '');
     setNikKk(val);
   };
@@ -51,7 +51,9 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin }) =
     try {
       if (view === 'forgot') {
         await apiService.auth.resetPassword(email);
-        setSuccessMsg('Jika email terdaftar, link reset password telah dikirim.');
+        const msg = 'Link reset password telah dikirim ke email Anda.';
+        setSuccessMsg(msg);
+        onShowNotification(msg, 'success');
         setLoading(false);
         return;
       }
@@ -59,39 +61,38 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin }) =
       let user: User;
 
       if (view === 'admin') {
-        // Login Admin
         if (!email) throw new Error('Mohon masukkan Email Admin.');
         user = await apiService.auth.login(email, password);
         
-        // Pengecekan role akan ditangani oleh API logic (auto-promote jika email 'admin')
-        // Tapi jika masih user biasa, kita tolak di sini
         if (user.role !== 'admin') {
            throw new Error('Akun ini terdaftar sebagai User Biasa. Pastikan menggunakan email khusus admin.');
         }
         
+        onShowNotification('Berhasil Login sebagai Admin.', 'success');
         onSuccess(user);
       } else if (view === 'login') {
-        // LOGIN JEMAAT: Menggunakan Email
         if (!email) throw new Error('Mohon masukkan alamat Email.');
         user = await apiService.auth.login(email, password);
+        onShowNotification('Berhasil Masuk. Selamat Datang!', 'success');
         onSuccess(user);
       } else if (view === 'register') {
-        // REGISTRASI: Butuh data lengkap
         if (password.length < 6) throw new Error('Password terlalu pendek (min. 6 karakter).');
         if (nikKk.length !== 16) throw new Error('NIK KK harus 16 digit angka.');
         if (!email.includes('@')) throw new Error('Email tidak valid.');
         
         const newAccount: UserAccount = { email, nik_kk: nikKk, password, name };
         user = await apiService.auth.register(newAccount);
+        onShowNotification('Registrasi Berhasil! Akun Anda telah dibuat.', 'success');
         onSuccess(user);
       }
       
     } catch (err: any) {
       console.error("Form Error:", err);
-      // Terjemahkan error umum Supabase/Sistem
       let msg = err.message || 'Terjadi kesalahan sistem.';
       if (msg.includes('Invalid login credentials')) msg = 'Email atau Password salah. Cek kembali.';
       setError(msg);
+      // Optional: show toast for error too
+      // onShowNotification(msg, 'error'); 
     } finally {
       setLoading(false);
     }
@@ -149,7 +150,6 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin }) =
           </div>
         )}
 
-        {/* FIELD EMAIL: Muncul di Login, Register, Admin, Forgot */}
         <div className="space-y-1 animate-in slide-in-from-top-2">
             <label className="text-xs font-bold text-slate-700 uppercase ml-1">
               {view === 'admin' ? 'Email Admin' : 'Alamat Email'}
@@ -162,7 +162,6 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin }) =
             />
         </div>
 
-        {/* FIELD NIK: Hanya muncul di Register */}
         {view === 'register' && (
           <div className="space-y-1 animate-in slide-in-from-top-2">
             <label className="text-xs font-bold text-slate-700 uppercase ml-1">NIK KK (16 Digit)</label>
@@ -174,7 +173,6 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin }) =
           </div>
         )}
 
-        {/* FIELD PASSWORD */}
         {view !== 'forgot' && (
           <div className="space-y-1 animate-in slide-in-from-top-2">
             <label className="text-xs font-bold text-slate-700 uppercase ml-1">Password</label>

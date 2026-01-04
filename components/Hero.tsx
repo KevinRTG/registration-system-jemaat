@@ -1,26 +1,10 @@
-
-import React, { useState, useEffect } from 'react';
-import { apiService } from '../services/api';
+import React from 'react';
 
 interface HeroProps {
   onStartRegistration: () => void;
 }
 
 const Hero: React.FC<HeroProps> = ({ onStartRegistration }) => {
-  const [aiMessage, setAiMessage] = useState<string>('');
-
-  useEffect(() => {
-    const fetchAiMessage = async () => {
-      try {
-        const message = await apiService.ai.getWelcomeMessage();
-        setAiMessage(String(message));
-      } catch (error) {
-        console.error("Failed to fetch AI message");
-      }
-    };
-    fetchAiMessage();
-  }, []);
-
   const handleInfoGereja = () => {
     alert("Halaman Informasi Gereja akan segera hadir. Saat ini Bapak/Ibu dapat melakukan pendaftaran jemaat melalui portal digital kami.");
   };
@@ -38,7 +22,7 @@ const Hero: React.FC<HeroProps> = ({ onStartRegistration }) => {
           <span className="block text-blue-600 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">Gereja GKO Cibitung</span>
         </h1>
         <p className="mt-6 max-w-2xl mx-auto text-lg text-slate-600 sm:text-xl animate-in fade-in duration-1000 delay-300">
-          {aiMessage || "Selamat datang di portal pendaftaran jemaat. Kami mengundang Bapak/Ibu/Saudara untuk bergabung dan melayani bersama di GKO Cibitung melalui pendataan digital yang inklusif dan modern."}
+          Selamat datang di portal pendaftaran jemaat. Kami mengundang Bapak/Ibu/Saudara untuk bergabung dan melayani bersama di GKO Cibitung melalui pendataan digital yang inklusif dan modern.
         </p>
         <div className="mt-10 flex flex-col sm:flex-row justify-center gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-500">
           <button 

@@ -18,6 +18,20 @@ const App: React.FC = () => {
   // State untuk memicu refresh data di dashboard
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
 
+  // Global Notification State
+  const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
+  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
+    setNotification({ message, type });
+  };
+
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => setNotification(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
+
   // Load user session from LocalStorage first for speed
   useEffect(() => {
     const savedUser = localStorage.getItem('gko_user');
@@ -35,31 +49,28 @@ const App: React.FC = () => {
           setCurrentUser(freshUser);
           localStorage.setItem('gko_user', JSON.stringify(freshUser));
         } else {
-          // If sync returns null, session is invalid or expired.
-          // Check if we have stale data in localStorage and clear it.
           if (localStorage.getItem('gko_user')) {
              console.log("Cleaning up stale session...");
              localStorage.removeItem('gko_user');
              setCurrentUser(null);
-             // Note: We don't auto-navigate here to avoid jarring UX on home page, 
-             // but UI will update to logged-out state (Navbar etc.)
           }
         }
       } catch (e) {
         console.error("Session sync failed:", e);
-        // On critical error, clear session to avoid invalid state loops
         localStorage.removeItem('gko_user');
         setCurrentUser(null);
       }
     };
     
-    // Only sync if we think we have a user or on first load
     sync();
   }, []);
 
   const handleAuthSuccess = (user: User) => {
     setCurrentUser(user);
     localStorage.setItem('gko_user', JSON.stringify(user));
+    
+    // Notification logic handled inside AuthForm now via callback, 
+    // but we navigate here.
     if (user.role === 'admin') {
       setCurrentPage('admin');
     } else {
@@ -70,7 +81,8 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     setCurrentUser(null);
     localStorage.removeItem('gko_user');
-    await apiService.auth.logout(); // Use the encapsulated logout method
+    await apiService.auth.logout(); 
+    showNotification("Anda telah keluar dari sistem.", 'success');
     setCurrentPage('home');
   };
 
@@ -79,7 +91,7 @@ const App: React.FC = () => {
     if (page === 'register' && !currentUser) {
       setCurrentPage('auth');
       setIsLogin(true);
-      alert('Silakan login terlebih dahulu untuk mendaftar jemaat.');
+      showNotification('Silakan login terlebih dahulu untuk mendaftar jemaat.', 'error');
       return;
     }
     if (page === 'admin' && currentUser?.role !== 'admin') {
@@ -102,19 +114,31 @@ const App: React.FC = () => {
   };
 
   const handleRegistrationComplete = (newNik?: string) => {
-    // Jika ada NIK baru yang dikembalikan (artinya pendaftaran berhasil)
     if (newNik && currentUser) {
       const updatedUser = { ...currentUser, nik_kk: newNik };
       setCurrentUser(updatedUser);
       localStorage.setItem('gko_user', JSON.stringify(updatedUser));
     }
 
-    setDashboardRefreshKey(prev => prev + 1); // Trigger data reload di Dashboard
+    setDashboardRefreshKey(prev => prev + 1); 
     navigate('dashboard');
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
+    <div className="min-h-screen flex flex-col bg-slate-50 relative">
+      {/* Global Toast Notification UI */}
+      {notification && (
+        <div className={`fixed top-6 right-6 z-[100] max-w-sm px-6 py-4 rounded-2xl shadow-2xl border animate-in slide-in-from-top-5 duration-300 ${notification.type === 'success' ? 'bg-white border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+           <div className="flex items-center gap-3">
+             <div className={`w-2 h-2 rounded-full ${notification.type === 'success' ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></div>
+             <div>
+               <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">{notification.type === 'success' ? 'Notifikasi Sistem' : 'Peringatan'}</p>
+               <p className="text-sm font-bold leading-relaxed">{notification.message}</p>
+             </div>
+           </div>
+        </div>
+      )}
+
       <Navbar 
         currentUser={currentUser} 
         onLogout={handleLogout} 
@@ -162,6 +186,7 @@ const App: React.FC = () => {
              <RegistrationStepper 
                onComplete={handleRegistrationComplete} 
                currentUser={currentUser}
+               onShowNotification={showNotification}
              />
           </div>
         )}
@@ -187,7 +212,8 @@ const App: React.FC = () => {
             <AuthForm 
               onSuccess={handleAuthSuccess} 
               isLogin={isLogin} 
-              setIsLogin={setIsLogin} 
+              setIsLogin={setIsLogin}
+              onShowNotification={showNotification}
             />
           </div>
         )}

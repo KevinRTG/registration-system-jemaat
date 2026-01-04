@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Keluarga, ServiceSector, FamilyRelationship, Jemaat, Gender, ChurchStatus, VerificationStatus, User } from '../types';
 import { ICONS } from '../constants';
@@ -39,6 +40,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
   const [editingFamily, setEditingFamily] = useState<Keluarga | null>(null);
   const [editingMember, setEditingMember] = useState<Jemaat | null>(null);
   const [editForm, setEditForm] = useState<any>({});
+  
+  // File Import Refs
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadData();
@@ -75,8 +79,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
   };
 
   // --- MEMOIZED DATA ---
-  
-  // 1. Filtered Families (Existing Logic)
   const filteredFamilies = useMemo(() => {
     return families.filter(f => {
       const kkMatch = (f.nomor_kk || '').includes(searchTerm);
@@ -89,7 +91,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
     });
   }, [families, searchTerm, sectorFilter, statusFilter]);
 
-  // 2. Birthday Members (New Logic)
   const birthdayMembers = useMemo(() => {
     const list: Array<Jemaat & { family: Keluarga; age: number; turningAge: number }> = [];
     
@@ -100,8 +101,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
             const birthDate = new Date(m.tanggal_lahir);
             if (birthDate.getMonth() === selectedMonth) {
               const currentAge = calculateAge(m.tanggal_lahir);
-              // Logic: Jika bulan ini ultah, age hasil calculateAge sudah bertambah (jika tanggal lewat) atau belum.
-              // Kita simplifikasi: turningAge adalah umur yang akan dicapai tahun ini.
               const yearNow = new Date().getFullYear();
               const birthYear = birthDate.getFullYear();
               const turningAge = yearNow - birthYear;
@@ -118,7 +117,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
       }
     });
 
-    // Sort by Date (Day of month)
     return list.sort((a, b) => {
       const dayA = new Date(a.tanggal_lahir).getDate();
       const dayB = new Date(b.tanggal_lahir).getDate();
@@ -126,6 +124,130 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
     });
   }, [families, selectedMonth]);
 
+
+  // --- IMPORT LOGIC ---
+  const handleImportClick = () => {
+    if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+        fileInputRef.current.click();
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const templateData = [
+        {
+            'NO_KK': '3275000000000001',
+            'ALAMAT': 'Jl. Contoh Alamat No. 1, Cibitung',
+            'WILAYAH': 'Sektor A',
+            'NAMA_LENGKAP': 'Budi Santoso',
+            'NIK': '3275123456780001',
+            'JENIS_KELAMIN': 'Laki-laki',
+            'TEMPAT_LAHIR': 'Jakarta',
+            'TGL_LAHIR': '1980-01-31',
+            'HUBUNGAN': 'Kepala Keluarga',
+            'STATUS_GEREJAWI': 'Sidi'
+        },
+        {
+            'NO_KK': '3275000000000001',
+            'ALAMAT': 'Jl. Contoh Alamat No. 1, Cibitung',
+            'WILAYAH': 'Sektor A',
+            'NAMA_LENGKAP': 'Siti Aminah',
+            'NIK': '3275123456780002',
+            'JENIS_KELAMIN': 'Perempuan',
+            'TEMPAT_LAHIR': 'Bekasi',
+            'TGL_LAHIR': '1985-05-20',
+            'HUBUNGAN': 'Istri',
+            'STATUS_GEREJAWI': 'Sidi'
+        }
+    ];
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template_Import");
+    XLSX.writeFile(wb, "Template_Import_Jemaat_GKO.xlsx");
+  };
+
+  const normalizeString = (str: any) => String(str || '').trim();
+  const parseDate = (val: any) => {
+    if (!val) return '';
+    if (typeof val === 'number') {
+        const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+        return date.toISOString().split('T')[0];
+    }
+    const str = String(val).trim();
+    if (str.match(/^\d{4}-\d{2}-\d{2}$/)) return str;
+    return str;
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsActionLoading('importing');
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+        try {
+            const bstr = evt.target?.result;
+            const wb = XLSX.read(bstr, { type: 'binary' });
+            const wsname = wb.SheetNames[0];
+            const ws = wb.Sheets[wsname];
+            const data: any[] = XLSX.utils.sheet_to_json(ws);
+
+            if (data.length === 0) throw new Error("File kosong atau format salah.");
+
+            const groups: Record<string, Keluarga> = {};
+            
+            data.forEach((row, idx) => {
+                const noKK = normalizeString(row['NO_KK']);
+                if (!noKK) return; 
+                if (!groups[noKK]) {
+                    groups[noKK] = {
+                        id: '',
+                        nomor_kk: noKK,
+                        alamat_kk: normalizeString(row['ALAMAT']),
+                        wilayah_pelayanan: normalizeString(row['WILAYAH']) as ServiceSector || ServiceSector.A,
+                        status: VerificationStatus.Verified,
+                        registrationDate: new Date().toISOString(),
+                        anggota: []
+                    };
+                }
+                groups[noKK].anggota.push({
+                    id: '',
+                    nama_lengkap: normalizeString(row['NAMA_LENGKAP']),
+                    nik: normalizeString(row['NIK']),
+                    jenis_kelamin: normalizeString(row['JENIS_KELAMIN']).toUpperCase().startsWith('L') ? Gender.LakiLaki : Gender.Perempuan,
+                    tempat_lahir: normalizeString(row['TEMPAT_LAHIR']),
+                    tanggal_lahir: parseDate(row['TGL_LAHIR']),
+                    hubungan_keluarga: normalizeString(row['HUBUNGAN']) as FamilyRelationship || FamilyRelationship.Lainnya,
+                    status_gerejawi: normalizeString(row['STATUS_GEREJAWI']) as ChurchStatus || ChurchStatus.Belum
+                });
+            });
+
+            let successCount = 0;
+            let failCount = 0;
+            
+            for (const kk of Object.keys(groups)) {
+                try {
+                    await apiService.families.create(groups[kk], VerificationStatus.Verified);
+                    successCount++;
+                } catch (err: any) {
+                    console.error(`Gagal import KK ${kk}:`, err);
+                    failCount++;
+                }
+            }
+            setToast({ 
+                message: `Import Selesai. Sukses: ${successCount}. Gagal: ${failCount}.`, 
+                type: failCount > 0 ? 'error' : 'success' 
+            });
+            loadData();
+        } catch (error: any) {
+            setToast({ message: "Gagal membaca file Excel: " + error.message, type: 'error' });
+        } finally {
+            setIsActionLoading(null);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+    reader.readAsBinaryString(file);
+  };
 
   // --- EXPORT LOGIC ---
   const handleExportExcel = () => {
@@ -143,7 +265,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
       let fileName = '';
 
       if (isBirthdayExport) {
-        // Export Format Ulang Tahun
         exportData = birthdayMembers.map(m => {
             const birthDate = new Date(m.tanggal_lahir);
             return {
@@ -159,7 +280,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
         });
         fileName = `Jemaat_Ultah_${MONTHS[selectedMonth]}_${new Date().getFullYear()}.xlsx`;
       } else {
-        // Export Format Keluarga (Existing)
         exportData = filteredFamilies.flatMap(f => 
             (f.anggota || []).map(a => ({
             'No. Kartu Keluarga': f.nomor_kk,
@@ -185,23 +305,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
       const worksheet = XLSX.utils.json_to_sheet(exportData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, isBirthdayExport ? "Ulang Tahun" : "Data Jemaat");
-
-      // Auto-size columns
-      const colWidths = Object.keys(exportData[0] || {}).map(key => {
-        const headerLen = key.length;
-        const maxContentLen = exportData.reduce((max, row: any) => {
-          const content = String(row[key] || '');
-          return Math.max(max, content.length);
-        }, headerLen);
-        return { wch: maxContentLen + 2 };
-      });
+      const colWidths = Object.keys(exportData[0] || {}).map(key => ({ wch: 20 }));
       worksheet['!cols'] = colWidths;
 
       XLSX.writeFile(workbook, fileName);
       setToast({ message: 'File Excel berhasil diunduh.', type: 'success' });
-
     } catch (err: any) {
-      console.error("Export error:", err);
       setToast({ message: 'Gagal mengekspor data: ' + err.message, type: 'error' });
     } finally {
       setIsActionLoading(null);
@@ -219,9 +328,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
     const isConfirmed = window.confirm(
       `PERINGATAN: PENGHAPUSAN PERMANEN\n\n` +
       `Nomor KK: ${family.nomor_kk}\n` +
-      `Kepala Keluarga: ${family.anggota?.find(a => a.hubungan_keluarga === FamilyRelationship.KepalaKeluarga)?.nama_lengkap || '-'}\n` +
       `Total Anggota: ${memberCount} orang\n\n` +
-      `Seluruh data anggota dalam keluarga ini akan ikut terhapus. Lanjutkan?`
+      `Seluruh data akan terhapus. Lanjutkan?`
     );
     
     if (!isConfirmed) return;
@@ -233,7 +341,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
       await apiService.families.delete(family.id);
       setFamilies(prev => prev.filter(f => f.id !== family.id));
       if (expandedId === family.id) setExpandedId(null);
-      setToast({ message: `Data keluarga ${family.nomor_kk} berhasil dihapus.`, type: 'success' });
+      setToast({ message: `Data keluarga ${family.nomor_kk} berhasil dihapus dari sistem.`, type: 'success' });
     } catch (err: any) {
       setToast({ message: err.message || 'Gagal menghapus data keluarga.', type: 'error' });
     } finally {
@@ -246,7 +354,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
     e.stopPropagation();
 
     if (member.hubungan_keluarga === FamilyRelationship.KepalaKeluarga) {
-      alert("Kepala Keluarga tidak bisa dihapus secara individu. Silakan hapus seluruh data KK jika diperlukan.");
+      alert("Kepala Keluarga tidak bisa dihapus secara individu.");
       return;
     }
 
@@ -296,7 +404,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
       if (editType === 'family' && editingFamily) {
         await apiService.families.update(editingFamily.id, editForm);
         setFamilies(prev => prev.map(f => f.id === editingFamily.id ? { ...f, ...editForm } : f));
-        setToast({ message: 'Data Keluarga diperbarui.', type: 'success' });
+        setToast({ message: 'Perubahan data keluarga berhasil disimpan.', type: 'success' });
       } else if (editType === 'member' && editingMember && editingFamily) {
         await apiService.families.updateMember(editingFamily.id, editForm);
         setFamilies(prev => prev.map(f => {
@@ -305,7 +413,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
           }
           return f;
         }));
-        setToast({ message: 'Data Anggota diperbarui.', type: 'success' });
+        setToast({ message: 'Perubahan data anggota berhasil disimpan.', type: 'success' });
       }
       setIsEditModalOpen(false);
     } catch (err: any) {
@@ -330,7 +438,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
     try {
       await apiService.families.updateStatus(family.id, nextStatus, currentUser?.id);
       setFamilies(prev => prev.map(f => f.id === family.id ? { ...f, status: nextStatus } : f));
-      setToast({ message: `Status KK ${family.nomor_kk} diubah ke ${nextStatus}.`, type: 'success' });
+      setToast({ message: `Status KK ${family.nomor_kk} berhasil diubah ke ${nextStatus}.`, type: 'success' });
     } catch (err: any) {
       setToast({ message: err.message || 'Gagal mengubah status.', type: 'error' });
     } finally {
@@ -340,20 +448,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
 
   return (
     <div className="space-y-6 px-1 md:px-0 relative pb-20">
-      {/* Toast Notification */}
+      <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".xlsx, .xls, .csv" />
+
+      {/* Toast Notification Local (Dashboard Specific) */}
       {toast && (
         <div className={`fixed bottom-6 right-6 z-[200] max-w-sm px-6 py-4 rounded-2xl shadow-2xl border animate-in slide-in-from-bottom-5 duration-300 ${toast.type === 'success' ? 'bg-white border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
            <div className="flex items-center gap-3">
              <div className={`w-2 h-2 rounded-full ${toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></div>
              <div>
-               <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">{toast.type === 'success' ? 'Sistem Berhasil' : 'Peringatan Admin'}</p>
+               <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">{toast.type === 'success' ? 'Sistem Admin' : 'Peringatan Admin'}</p>
                <p className="text-xs font-semibold leading-relaxed">{toast.message}</p>
              </div>
            </div>
         </div>
       )}
 
-      {/* Edit Modal (Existing code reused) */}
+      {/* Edit Modal */}
       {isEditModalOpen && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
            <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -432,6 +542,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
             </div>
             
             <div className="flex flex-wrap items-center gap-2">
+            {activeTab === 'families' && (
+                <div className="flex items-center gap-2 mr-2">
+                    <button 
+                        onClick={handleDownloadTemplate}
+                        className="text-[10px] font-bold text-blue-600 hover:underline"
+                        title="Download Template Excel"
+                    >
+                        Template
+                    </button>
+                    <button 
+                        onClick={handleImportClick}
+                        disabled={isActionLoading === 'importing'}
+                        className="bg-blue-50 text-blue-700 border border-blue-200 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-100 transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                        title="Import Data Jemaat dari Excel"
+                    >
+                        {isActionLoading === 'importing' ? (
+                            <div className="w-4 h-4 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
+                        ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                            </svg>
+                        )}
+                        Import Data
+                    </button>
+                </div>
+            )}
+
             <button 
                 onClick={handleExportExcel} 
                 disabled={isActionLoading === 'exporting' || (activeTab === 'families' && filteredFamilies.length === 0) || (activeTab === 'birthdays' && birthdayMembers.length === 0)}
@@ -441,7 +578,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                 {isActionLoading === 'exporting' ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                 ) : <ICONS.Export />}
-                {activeTab === 'birthdays' ? 'Export Ulang Tahun' : 'Export Data Jemaat'}
+                {activeTab === 'birthdays' ? 'Export Ulang Tahun' : 'Export Data'}
             </button>
             <button 
                 onClick={loadData} 
