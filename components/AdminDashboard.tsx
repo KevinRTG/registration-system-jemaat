@@ -140,23 +140,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
   const handleDownloadTemplate = () => {
     const templateData = [
         {
-            'NO_KK': '3275000000000001',
-            'ALAMAT_KK': 'Jl. Contoh Alamat No. 1, Cibitung',
-            'WILAYAH': 'Sektor A',
-            'NAMA_LENGKAP': 'Budi Santoso',
-            'NOMOR_INDUK': '3275123456780001',
-            'STATUS_KELUARGA': 'Kepala Keluarga',
-            'TEMPAT_LAHIR': 'Jakarta',
-            'TGL_LAHIR': '1980-01-31',
-            'ALAMAT_DOMISILI': 'Jl. Sama dengan KK',
-            'JENIS_KELAMIN': 'Laki-laki',
-            'STATUS_PERNIKAHAN': 'Menikah',
-            'NO_TELEPON': '08123456789',
-            'EMAIL': 'budi@example.com',
-            'PEKERJAAN': 'Karyawan',
-            'GOL_DARAH': 'O',
-            'STATUS_GEREJAWI': 'Sidi',
-            'CATATAN_PELAYANAN': 'Musik'
+            'Nomor KK': '3275000000000001',
+            'Nomor Induk': '3275123456780001',
+            'Nama Lengkap': 'Budi Santoso',
+            'Status Dalam Keluarga': 'Kepala Keluarga',
+            'Tempat Tanggal Lahir': 'Jakarta, 24 Februari 1980',
+            'Alamat': 'Jl. Contoh Alamat No. 1, Cibitung',
+            'Jenis Kelamin': 'Laki-laki',
+            'Status': 'Menikah',
+            'Nomor Telepon': '08123456789',
+            'E-mail': 'budi@example.com',
+            'Pekerjaan/Usaha': 'Karyawan',
+            'Gol. Darah': 'O',
+            'Catatan Pelayanan': 'Musik',
+            'Wilayah': 'Sektor A'
         }
     ];
     const ws = XLSX.utils.json_to_sheet(templateData);
@@ -166,16 +163,60 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
   };
 
   const normalizeString = (str: any) => String(str || '').trim();
-  const parseDate = (val: any) => {
-    if (!val) return '';
-    if (typeof val === 'number') {
+  
+  // Helper khusus untuk parsing "Tempat, DD Bulan YYYY" (Format Indonesia)
+  const parseIndonesianTTL = (rawTTL: string) => {
+    if (!rawTTL) return { tempat: '', tanggal: '' };
+    
+    // Split by comma first (e.g. "Jakarta, 24 Februari 1970")
+    const parts = rawTTL.split(',');
+    if (parts.length < 2) return { tempat: rawTTL, tanggal: '' };
+
+    const tempat = parts[0].trim();
+    let tanggalStr = parts.slice(1).join(',').trim(); // "24 Februari 1970"
+
+    // Mapping Nama Bulan Indonesia ke Index (0-11)
+    const monthMap: {[key: string]: string} = {
+        'januari': '01', 'februari': '02', 'maret': '03', 'april': '04', 'mei': '05', 'juni': '06',
+        'juli': '07', 'agustus': '08', 'september': '09', 'oktober': '10', 'november': '11', 'desember': '12',
+        'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'jun': '06', 'jul': '07', 'agu': '08', 'sep': '09', 'okt': '10', 'nov': '11', 'des': '12'
+    };
+
+    // Coba parsing format "24 Februari 1970" atau "24-02-1970"
+    let dateObj = new Date(tanggalStr);
+    
+    // Jika gagal parsing standar, coba manual replacement bulan Indo
+    if (isNaN(dateObj.getTime())) {
+        const lowerDate = tanggalStr.toLowerCase();
+        for (const [indo, digit] of Object.entries(monthMap)) {
+            if (lowerDate.includes(indo)) {
+                // Replace "Februari" with "02", etc.
+                // Assuming format DD Month YYYY -> DD-MM-YYYY roughly for parsing
+                const standardDate = lowerDate.replace(indo, digit).replace(/ /g, '-');
+                // Need to ensure format YYYY-MM-DD for HTML input
+                const dateParts = lowerDate.split(' ');
+                if (dateParts.length >= 3) {
+                    const day = dateParts[0].padStart(2, '0');
+                    const month = digit;
+                    const year = dateParts[dateParts.length - 1]; // Year usually last
+                    return { tempat, tanggal: `${year}-${month}-${day}` };
+                }
+            }
+        }
+    } else {
+        return { tempat, tanggal: dateObj.toISOString().split('T')[0] };
+    }
+
+    return { tempat, tanggal: '' };
+  };
+
+  const parseSimpleDate = (val: any) => {
+      if (typeof val === 'number') {
         const date = new Date(Math.round((val - 25569) * 86400 * 1000));
         return date.toISOString().split('T')[0];
-    }
-    const str = String(val).trim();
-    if (str.match(/^\d{4}-\d{2}-\d{2}$/)) return str;
-    return str;
-  };
+      }
+      return String(val || '');
+  }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -189,42 +230,83 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
             const wb = XLSX.read(bstr, { type: 'binary' });
             const wsname = wb.SheetNames[0];
             const ws = wb.Sheets[wsname];
-            const data: any[] = XLSX.utils.sheet_to_json(ws);
+            
+            // Konversi ke JSON Array of Arrays untuk mencari header
+            const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+            
+            // Cari baris header (baris yang mengandung "Nomor KK")
+            let headerRowIndex = 0;
+            for (let i = 0; i < Math.min(10, rawData.length); i++) {
+                if (rawData[i].some((cell: any) => String(cell).toLowerCase().includes('nomor kk'))) {
+                    headerRowIndex = i;
+                    break;
+                }
+            }
+
+            // Parse ulang menggunakan headerRowIndex yang ditemukan
+            const data: any[] = XLSX.utils.sheet_to_json(ws, { range: headerRowIndex });
 
             if (data.length === 0) throw new Error("File kosong atau format salah.");
 
             const groups: Record<string, Keluarga> = {};
             
             data.forEach((row, idx) => {
-                const noKK = normalizeString(row['NO_KK']);
+                const noKK = normalizeString(row['Nomor KK'] || row['NO_KK']);
                 if (!noKK) return; 
+                
+                // --- FAMILY LEVEL DATA ---
                 if (!groups[noKK]) {
+                    // Logic Default Wilayah: Jika tidak ada, set 'Belum'
+                    let wilayahRaw = normalizeString(row['Wilayah'] || row['WILAYAH']);
+                    let finalWilayah = ServiceSector.Belum;
+                    
+                    // Coba match dengan enum
+                    if (wilayahRaw && Object.values(ServiceSector).includes(wilayahRaw as ServiceSector)) {
+                        finalWilayah = wilayahRaw as ServiceSector;
+                    }
+
                     groups[noKK] = {
                         id: '',
                         nomor_kk: noKK,
-                        alamat_kk: normalizeString(row['ALAMAT_KK'] || row['ALAMAT']),
-                        wilayah_pelayanan: normalizeString(row['WILAYAH']) as ServiceSector || ServiceSector.Belum,
+                        alamat_kk: normalizeString(row['Alamat'] || row['ALAMAT'] || row['Alamat Lengkap']),
+                        wilayah_pelayanan: finalWilayah,
                         status: VerificationStatus.Verified,
                         registrationDate: new Date().toISOString(),
                         anggota: []
                     };
                 }
+
+                // --- MEMBER LEVEL DATA ---
+                // Parse TTL
+                const rawTTL = normalizeString(row['Tempat Tanggal Lahir'] || row['TEMPAT_TGL_LAHIR']);
+                let tempatLahir = normalizeString(row['Tempat Lahir'] || row['TEMPAT_LAHIR']);
+                let tanggalLahir = parseSimpleDate(row['Tanggal Lahir'] || row['TGL_LAHIR']);
+
+                // Jika kolom gabungan (TTL) ada, override
+                if (rawTTL && (!tempatLahir || !tanggalLahir)) {
+                    const parsed = parseIndonesianTTL(rawTTL);
+                    tempatLahir = parsed.tempat;
+                    tanggalLahir = parsed.tanggal;
+                }
+
                 groups[noKK].anggota.push({
                     id: '',
-                    nama_lengkap: normalizeString(row['NAMA_LENGKAP']),
-                    nik: normalizeString(row['NOMOR_INDUK'] || row['NIK']),
-                    jenis_kelamin: normalizeString(row['JENIS_KELAMIN']).toUpperCase().startsWith('L') ? Gender.LakiLaki : Gender.Perempuan,
-                    tempat_lahir: normalizeString(row['TEMPAT_LAHIR']),
-                    tanggal_lahir: parseDate(row['TGL_LAHIR']),
-                    hubungan_keluarga: normalizeString(row['STATUS_KELUARGA'] || row['HUBUNGAN']) as FamilyRelationship || FamilyRelationship.Lainnya,
-                    status_gerejawi: normalizeString(row['STATUS_GEREJAWI']) as ChurchStatus || ChurchStatus.Belum,
-                    alamat_domisili: normalizeString(row['ALAMAT_DOMISILI'] || row['ALAMAT']),
-                    status_pernikahan: normalizeString(row['STATUS_PERNIKAHAN'] || row['STATUS']) as MaritalStatus,
-                    nomor_telepon: normalizeString(row['NO_TELEPON']),
-                    email: normalizeString(row['EMAIL']),
-                    pekerjaan: normalizeString(row['PEKERJAAN']),
-                    golongan_darah: normalizeString(row['GOL_DARAH']) as BloodType,
-                    catatan_pelayanan: normalizeString(row['CATATAN_PELAYANAN'])
+                    nama_lengkap: normalizeString(row['Nama Lengkap'] || row['NAMA_LENGKAP']),
+                    nik: normalizeString(row['Nomor Induk'] || row['NOMOR_INDUK'] || row['NIK']),
+                    jenis_kelamin: normalizeString(row['Jenis Kelamin'] || row['JENIS_KELAMIN']).toUpperCase().startsWith('P') ? Gender.Perempuan : Gender.LakiLaki,
+                    tempat_lahir: tempatLahir,
+                    tanggal_lahir: tanggalLahir,
+                    hubungan_keluarga: normalizeString(row['Status Dalam Keluarga'] || row['HUBUNGAN']) as FamilyRelationship || FamilyRelationship.Lainnya,
+                    status_gerejawi: normalizeString(row['Status Gerejawi'] || row['STATUS_GEREJAWI']) as ChurchStatus || ChurchStatus.Belum,
+                    
+                    // Extra Fields
+                    alamat_domisili: normalizeString(row['Alamat'] || row['ALAMAT']),
+                    status_pernikahan: normalizeString(row['Status'] || row['STATUS_PERNIKAHAN']) as MaritalStatus || MaritalStatus.BelumMenikah,
+                    nomor_telepon: normalizeString(row['Nomor Telepon'] || row['NO_TELEPON']),
+                    email: normalizeString(row['E-mail'] || row['EMAIL']),
+                    pekerjaan: normalizeString(row['Pekerjaan/Usaha'] || row['PEKERJAAN']),
+                    golongan_darah: normalizeString(row['Gol. Darah'] || row['GOL_DARAH']) as BloodType,
+                    catatan_pelayanan: normalizeString(row['Catatan Pelayanan'] || row['CATATAN_PELAYANAN'])
                 });
             });
 
@@ -288,6 +370,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
       } else {
         exportData = filteredFamilies.flatMap(f => 
             (f.anggota || []).map(a => ({
+              'Nomor KK': f.nomor_kk,
               'Nomor Induk': a.nik,
               'Nama Lengkap': a.nama_lengkap,
               'Status Dalam Keluarga': a.hubungan_keluarga,
@@ -301,7 +384,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
               'Gol. Darah': a.golongan_darah || '-',
               'Catatan Pelayanan': a.catatan_pelayanan || '-',
               'Status Gerejawi': a.status_gerejawi,
-              'No. KK': f.nomor_kk,
               'Wilayah': f.wilayah_pelayanan
             }))
         );
