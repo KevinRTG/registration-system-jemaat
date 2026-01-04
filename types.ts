@@ -24,7 +24,8 @@ export enum ServiceSector {
   B = 'Sektor B',
   C = 'Sektor C',
   D = 'Sektor D',
-  E = 'Sektor E'
+  E = 'Sektor E',
+  Belum = 'Belum ada Sektor Wilayah'
 }
 
 export enum VerificationStatus {

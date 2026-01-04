@@ -209,7 +209,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser }) => {
                         id: '',
                         nomor_kk: noKK,
                         alamat_kk: normalizeString(row['ALAMAT']),
-                        wilayah_pelayanan: normalizeString(row['WILAYAH']) as ServiceSector || ServiceSector.A,
+                        // Default ke Belum ada Sektor jika kosong
+                        wilayah_pelayanan: normalizeString(row['WILAYAH']) as ServiceSector || ServiceSector.Belum,
                         status: VerificationStatus.Verified,
                         registrationDate: new Date().toISOString(),
                         anggota: []

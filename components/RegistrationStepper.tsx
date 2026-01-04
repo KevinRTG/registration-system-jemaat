@@ -15,7 +15,7 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
   const [kkData, setKkData] = useState({
     nomor_kk: '',
     alamat_kk: '',
-    wilayah_pelayanan: ServiceSector.A,
+    wilayah_pelayanan: ServiceSector.Belum,
   });
   
   const [anggota, setAnggota] = useState<Partial<Jemaat>[]>([
@@ -182,6 +182,7 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
                 >
                   {Object.values(ServiceSector).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
+                <p className="text-[10px] text-slate-500 mt-1">*Jika belum tahu, pilih "Belum ada Sektor Wilayah". Admin akan menentukannya nanti.</p>
               </div>
             </div>
             <div className="space-y-1">
