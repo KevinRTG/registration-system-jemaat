@@ -9,7 +9,6 @@ import AuthForm from './components/AuthForm';
 import Footer from './components/Footer';
 import { User } from './types';
 import { apiService } from './services/api';
-import { Analytics } from "@vercel/analytics/react";
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<'home' | 'register' | 'admin' | 'auth' | 'admin-auth' | 'dashboard'>('home');
@@ -276,7 +275,6 @@ const App: React.FC = () => {
       </main>
 
       <Footer onNavigate={navigate} />
-      <Analytics/> 
     </div>
   );
 };
