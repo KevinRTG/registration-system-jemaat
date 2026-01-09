@@ -87,7 +87,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ currentUser, onNavigate, 
             {/* DIGITAL CARD COMPONENT */}
             <div className="group relative w-full aspect-[1.586/1] max-w-md mx-auto md:max-w-lg lg:max-w-xl rounded-3xl overflow-hidden shadow-2xl shadow-slate-300 transition-transform duration-500 hover:scale-[1.02]">
                 {/* Backgrounds */}
-                <div className={`absolute inset-0 bg-gradient-to-br ${isVerified ? 'from-slate-800 via-slate-900 to-black' : 'from-blue-600 via-indigo-700 to-purple-800'}`}></div>
+                <div className={`absolute inset-0 bg-gradient-to-br ${isVerified ? 'from-green-600 via-emerald-700 to-black/90' : 'from-yellow-400 via-orange-500 to-red-500'}`}></div>
                 <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-white/40 via-transparent to-transparent"></div>
                 
                 {/* Content */}

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { STEPS, ICONS } from '../constants';
 import { Gender, FamilyRelationship, ChurchStatus, ServiceSector, Jemaat, Keluarga, VerificationStatus, User, MaritalStatus, BloodType } from '../types';
 import { apiService } from '../services/api';
@@ -13,10 +13,17 @@ interface RegistrationStepperProps {
 const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, currentUser, onShowNotification }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [kkData, setKkData] = useState({
-    nomor_kk: '',
+    nomor_kk: currentUser?.nik_kk || '',
     alamat_kk: '',
     wilayah_pelayanan: ServiceSector.Belum,
   });
+  
+  // Update KK Data jika currentUser berubah (misal baru load dari storage/api)
+  useEffect(() => {
+    if (currentUser?.nik_kk) {
+        setKkData(prev => ({ ...prev, nomor_kk: currentUser.nik_kk || '' }));
+    }
+  }, [currentUser]);
   
   const [anggota, setAnggota] = useState<Partial<Jemaat>[]>([
     { 
@@ -24,7 +31,7 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
       hubungan_keluarga: FamilyRelationship.KepalaKeluarga,
       jenis_kelamin: Gender.LakiLaki,
       status_gerejawi: ChurchStatus.Belum,
-      nama_lengkap: '',
+      nama_lengkap: currentUser?.name || '', // Auto-fill nama kepala keluarga jika sesuai
       nik: '',
       tempat_lahir: '',
       tanggal_lahir: '',
@@ -32,7 +39,7 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
       golongan_darah: BloodType.Unknown,
       pekerjaan: '',
       nomor_telepon: '',
-      email: '',
+      email: currentUser?.email || '', // Auto-fill email
       alamat_domisili: '',
       catatan_pelayanan: ''
     }
@@ -123,7 +130,12 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
         status: VerificationStatus.Pending
       };
       await apiService.families.create(newKeluarga);
-      await apiService.auth.updateProfile(currentUser.id, { nik_kk: kkData.nomor_kk });
+      
+      // Update profile NIK KK (meskipun sudah sama, untuk memastikan konsistensi)
+      if (currentUser.nik_kk !== kkData.nomor_kk) {
+          await apiService.auth.updateProfile(currentUser.id, { nik_kk: kkData.nomor_kk });
+      }
+      
       onShowNotification('Pendaftaran Berhasil!', 'success');
       onComplete(kkData.nomor_kk);
     } catch (error: any) {
@@ -170,7 +182,23 @@ const RegistrationStepper: React.FC<RegistrationStepperProps> = ({ onComplete, c
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className={inputContainer}>
                 <label className={labelStyle}>Nomor KK</label>
-                <input type="text" name="nomor_kk" maxLength={16} value={kkData.nomor_kk} onChange={handleKkChange} className={inputStyle(!!errors.nomor_kk)} placeholder="16 Digit Angka" />
+                <div className="relative">
+                    <input 
+                      type="text" 
+                      name="nomor_kk" 
+                      maxLength={16} 
+                      value={kkData.nomor_kk} 
+                      readOnly
+                      className={`${inputStyle(!!errors.nomor_kk)} bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200 focus:border-slate-200 focus:ring-0`} 
+                      placeholder="16 Digit Angka" 
+                    />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                    </div>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1 ml-1 flex items-center gap-1">
+                    <span>ℹ️</span> Otomatis diambil dari data akun Anda.
+                </p>
                 {errors.nomor_kk && <p className="text-xs text-red-500 font-medium ml-1">{errors.nomor_kk}</p>}
               </div>
               <div className={inputContainer}>
