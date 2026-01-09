@@ -11,7 +11,7 @@ import { User } from './types';
 import { apiService } from './services/api';
 
 const App: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<'home' | 'register' | 'admin' | 'auth' | 'dashboard'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'register' | 'admin' | 'auth' | 'admin-auth' | 'dashboard'>('home');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLogin, setIsLogin] = useState(true);
   
@@ -86,7 +86,7 @@ const App: React.FC = () => {
     setCurrentPage('home');
   };
 
-  const navigate = (page: 'home' | 'register' | 'admin' | 'auth' | 'dashboard') => {
+  const navigate = (page: 'home' | 'register' | 'admin' | 'auth' | 'admin-auth' | 'dashboard') => {
     // Auth Guards
     if (page === 'register' && !currentUser) {
       setCurrentPage('auth');
@@ -95,8 +95,8 @@ const App: React.FC = () => {
       return;
     }
     if (page === 'admin' && currentUser?.role !== 'admin') {
-      setCurrentPage('auth');
-      setIsLogin(true);
+      // Jika mencoba akses admin tapi belum login/bukan admin, arahkan ke login admin
+      setCurrentPage('admin-auth');
       return;
     }
     if (page === 'dashboard' && !currentUser) {
@@ -146,7 +146,8 @@ const App: React.FC = () => {
         activePage={currentPage}
       />
 
-      <main className="flex-grow">
+      {/* Main Content Area with Dynamic Top Padding to account for Fixed Navbar */}
+      <main className={`flex-grow ${currentPage !== 'home' ? 'pt-24 md:pt-28' : ''}`}>
         {currentPage === 'home' && (
           <>
             <Hero onStartRegistration={() => navigate(currentUser ? 'register' : 'auth')} />
@@ -182,7 +183,7 @@ const App: React.FC = () => {
         )}
 
         {currentPage === 'register' && (
-          <div className="max-w-4xl mx-auto px-4 py-12">
+          <div className="max-w-4xl mx-auto px-4 py-6">
              <RegistrationStepper 
                onComplete={handleRegistrationComplete} 
                currentUser={currentUser}
@@ -192,13 +193,13 @@ const App: React.FC = () => {
         )}
 
         {currentPage === 'admin' && (
-          <div className="max-w-7xl mx-auto px-4 py-8">
+          <div className="max-w-7xl mx-auto px-4 py-6">
             <AdminDashboard currentUser={currentUser} />
           </div>
         )}
 
         {currentPage === 'dashboard' && currentUser && (
-            <div className="max-w-7xl mx-auto px-4 py-8">
+            <div className="max-w-7xl mx-auto px-4 py-6">
                 <UserDashboard 
                   currentUser={currentUser} 
                   onNavigate={navigate} 
@@ -208,19 +209,20 @@ const App: React.FC = () => {
             </div>
         )}
 
-        {currentPage === 'auth' && (
+        {(currentPage === 'auth' || currentPage === 'admin-auth') && (
           <div className="min-h-[80vh] flex items-center justify-center px-4">
             <AuthForm 
               onSuccess={handleAuthSuccess} 
               isLogin={isLogin} 
               setIsLogin={setIsLogin}
               onShowNotification={showNotification}
+              defaultView={currentPage === 'admin-auth' ? 'admin' : undefined}
             />
           </div>
         )}
       </main>
 
-      <Footer />
+      <Footer onNavigate={navigate} />
     </div>
   );
 };
