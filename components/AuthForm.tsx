@@ -164,7 +164,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
             <input 
               type={view === 'admin' ? 'text' : 'email'} 
               required value={email} onChange={(e) => setEmail(e.target.value)}
-              className={`${inputClass} ${isDarkTheme ? 'bg-slate-800 border-slate-700 text-white focus:ring-purple-500 focus:border-purple-500' : ''}`} 
+              className={`${inputClass} ${isDarkTheme ? 'bg-slate-800 border-slate-700 text-black focus:ring-purple-500 focus:border-purple-500' : ''}`} 
               placeholder="nama@email.com"
             />
         </div>
@@ -184,7 +184,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
             <label className={labelClass}>Password</label>
             <input 
               type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
-              className={`${inputClass} ${isDarkTheme ? 'bg-slate-800 border-slate-700 text-white focus:ring-purple-500 focus:border-purple-500' : ''}`}
+              className={`${inputClass} ${isDarkTheme ? 'bg-slate-800 border-slate-700 text-black focus:ring-purple-500 focus:border-purple-500' : ''}`}
               placeholder="••••••••"
             />
           </div>
