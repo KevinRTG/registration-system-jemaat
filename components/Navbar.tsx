@@ -36,7 +36,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onNavigate, acti
           {/* Logo Section */}
           <div className="flex items-center gap-3 cursor-pointer group" onClick={() => onNavigate('home')}>
             <div className="relative">
-              <div className="absolute inset-0 bg-blue-500 rounded-xl blur opacity-20 group-hover:opacity-40 transition-opacity"></div>
+              <div className="absolute inset-0 bg-blue-500 rounded-xl blur opacity-5 group-hover:opacity-40 transition-opacity"></div>
               <img
                 src="https://sinodegko.org/wp-content/uploads/2021/08/logo_transparanresize.png"
                 alt="GKO Logo"
