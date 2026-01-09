@@ -190,9 +190,58 @@ export const apiService = {
       await supabase.auth.signOut();
     },
 
+    // Legacy Reset (Link based) - Optional fallback
     resetPassword: async (email: string): Promise<void> => {
       const { error } = await supabase.auth.resetPasswordForEmail(email);
       if (error) throw new Error(error.message);
+    },
+
+    // 1. Send OTP for Recovery (Using signInWithOtp to generate 6-digit CODE)
+    sendRecoveryOtp: async (email: string): Promise<void> => {
+       // KITA KEMBALI MENGGUNAKAN signInWithOtp KARENA INI SATU-SATUNYA CARA DAPAT 6 DIGIT ANGKA
+       // Opsi `shouldCreateUser: false` memastikan hanya user yang SUDAH ADA yang bisa minta OTP (Fitur Forgot Password)
+       const { error } = await supabase.auth.signInWithOtp({
+           email: email.trim().toLowerCase(),
+           options: { shouldCreateUser: false }
+       });
+       
+       if (error) {
+           // Handle spesifik error jika user tidak ditemukan karena shouldCreateUser: false
+           if (error.message.includes('Signups not allowed for otp') || error.message.includes('User not found')) {
+               throw new Error('Email tidak terdaftar dalam sistem.');
+           }
+           throw new Error(error.message);
+       }
+    },
+
+    // 2. Verify OTP for Recovery
+    verifyRecoveryOtp: async (email: string, token: string): Promise<User> => {
+        // Tipe verifikasi HARUS 'email' (bukan 'recovery') jika menggunakan signInWithOtp
+        // 'recovery' hanya untuk link reset password panjang
+        const { data, error } = await supabase.auth.verifyOtp({
+            email: email.trim().toLowerCase(),
+            token,
+            type: 'email' 
+        });
+        if (error) throw new Error(error.message);
+        
+        // Return session user immediately to confirm login state
+        if (!data.session?.user) throw new Error("Verifikasi gagal, sesi tidak ditemukan.");
+        
+        return {
+            id: data.session.user.id,
+            name: data.session.user.user_metadata?.name || 'User',
+            email: data.session.user.email || '',
+            role: 'user' // Default assume user context after reset
+        };
+    },
+
+    // 3. Update Password (After OTP verification logs the user in)
+    updatePassword: async (newPassword: string): Promise<void> => {
+       const { error } = await supabase.auth.updateUser({
+           password: newPassword
+       });
+       if (error) throw new Error(error.message);
     },
 
     updateProfile: async (userId: string, updates: any) => {

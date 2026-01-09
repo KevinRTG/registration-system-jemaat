@@ -11,7 +11,7 @@ interface AuthFormProps {
   defaultView?: 'admin' | 'login';
 }
 
-type AuthView = 'login' | 'register' | 'forgot' | 'admin';
+type AuthView = 'login' | 'register' | 'forgot' | 'admin' | 'verify-otp' | 'new-password';
 
 const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onShowNotification, defaultView }) => {
   const [view, setView] = useState<AuthView>(defaultView || (isLogin ? 'login' : 'register'));
@@ -20,7 +20,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
   useEffect(() => {
     if (defaultView) {
         setView(defaultView);
-    } else if (view !== 'admin' && view !== 'forgot') {
+    } else if (view !== 'admin' && view !== 'forgot' && view !== 'verify-otp' && view !== 'new-password') {
         setView(isLogin ? 'login' : 'register');
     }
   }, [isLogin, defaultView]);
@@ -28,7 +28,9 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
   const [email, setEmail] = useState('');
   const [nikKk, setNikKk] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
+  const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -54,10 +56,47 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
 
     try {
       if (view === 'forgot') {
-        await apiService.auth.resetPassword(email);
-        const msg = 'Link reset password telah dikirim ke email Anda.';
+        if (!email) throw new Error('Mohon masukkan email Anda.');
+        // 1. Send OTP Logic
+        await apiService.auth.sendRecoveryOtp(email);
+        
+        const msg = 'Kode OTP telah dikirim ke email Anda.';
         setSuccessMsg(msg);
         onShowNotification(msg, 'success');
+        setView('verify-otp'); // Move to OTP input
+        setLoading(false);
+        return;
+      }
+      
+      if (view === 'verify-otp') {
+        // Supabase bisa mengirim 6 atau 8 digit tergantung pengaturan. 
+        // Kita izinkan input jika panjangnya 6 atau lebih.
+        if (!otp || otp.length < 6) throw new Error('Masukkan kode OTP yang valid.');
+        
+        // 2. Verify OTP Logic
+        await apiService.auth.verifyRecoveryOtp(email, otp);
+        
+        const msg = 'Kode terverifikasi! Silakan buat password baru.';
+        setSuccessMsg(msg);
+        onShowNotification(msg, 'success');
+        setView('new-password'); // Move to new password input
+        setLoading(false);
+        return;
+      }
+
+      if (view === 'new-password') {
+        if (password.length < 6) throw new Error('Password min. 6 karakter.');
+        if (password !== confirmPassword) throw new Error('Konfirmasi password tidak cocok.');
+        // 3. Update Password Logic
+        await apiService.auth.updatePassword(password);
+        
+        const msg = 'Password berhasil diubah. Silakan login.';
+        setSuccessMsg(msg);
+        onShowNotification(msg, 'success');
+        setView('login'); // Back to Login
+        setPassword('');
+        setConfirmPassword('');
+        setOtp('');
         setLoading(false);
         return;
       }
@@ -103,9 +142,11 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
       } 
       else if (msg.includes('Invalid login credentials')) {
           msg = 'Email atau Password salah.';
+      } else if (msg.includes('Token has expired')) {
+          msg = 'Kode OTP kadaluarsa. Silakan kirim ulang.';
       }
       setError(msg);
-      if (view === 'register') onShowNotification(msg, 'error');
+      onShowNotification(msg, 'error');
     } finally {
       setLoading(false);
     }
@@ -125,11 +166,18 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
 
       <div className="text-center mb-8">
         <h2 className={`text-2xl font-bold tracking-tight ${isDarkTheme ? 'text-white' : 'text-slate-900'}`}>
-          {view === 'admin' ? 'Portal Admin' : view === 'login' ? 'Portal Jemaat' : view === 'register' ? 'Buat Akun Jemaat' : 'Reset Password'}
+          {view === 'admin' ? 'Portal Admin' : 
+           view === 'login' ? 'Portal Jemaat' : 
+           view === 'register' ? 'Buat Akun Jemaat' : 
+           view === 'verify-otp' ? 'Verifikasi OTP' :
+           view === 'new-password' ? 'Password Baru' :
+           'Reset Password'}
         </h2>
         <p className={`mt-2 text-sm leading-relaxed ${isDarkTheme ? 'text-slate-400' : 'text-slate-500'}`}>
           {view === 'admin' ? 'Akses khusus staf sekretariat & majelis' : 
-           view === 'forgot' ? 'Masukkan email untuk reset password' : 
+           view === 'forgot' ? 'Masukkan email untuk kode OTP' : 
+           view === 'verify-otp' ? 'Masukkan kode dari email' :
+           view === 'new-password' ? 'Buat password baru yang aman' :
            view === 'login' ? 'Silakan masuk untuk mengakses data' : 'Isi form di bawah untuk mendaftar'}
         </p>
       </div>
@@ -159,15 +207,21 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
           </div>
         )}
 
-        <div className="animate-in slide-in-from-top-2">
-            <label className={labelClass}>{view === 'admin' ? 'Email Admin' : 'Email'}</label>
-            <input 
-              type={view === 'admin' ? 'text' : 'email'} 
-              required value={email} onChange={(e) => setEmail(e.target.value)}
-              className={`${inputClass} ${isDarkTheme ? 'bg-slate-800 border-slate-700 text-black focus:ring-purple-500 focus:border-purple-500' : ''}`} 
-              placeholder="nama@email.com"
-            />
-        </div>
+        {/* Email Field - Hidden only if on verify-otp or new-password to keep context, but actually we might want to show it disabled */}
+        {(view !== 'new-password') && (
+            <div className="animate-in slide-in-from-top-2">
+                <label className={labelClass}>{view === 'admin' ? 'Email Admin' : 'Email'}</label>
+                <input 
+                type={view === 'admin' ? 'text' : 'email'} 
+                required 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={view === 'verify-otp'}
+                className={`${inputClass} ${isDarkTheme ? 'bg-slate-800 border-slate-700 text-black focus:ring-purple-500 focus:border-purple-500' : ''} ${view === 'verify-otp' ? 'opacity-70 cursor-not-allowed bg-slate-100' : ''}`} 
+                placeholder="nama@email.com"
+                />
+            </div>
+        )}
 
         {view === 'register' && (
           <div className="animate-in slide-in-from-top-2">
@@ -179,7 +233,21 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
           </div>
         )}
 
-        {view !== 'forgot' && (
+        {/* OTP Input */}
+        {view === 'verify-otp' && (
+             <div className="animate-in slide-in-from-top-2">
+             <label className={labelClass}>Kode Verifikasi (OTP)</label>
+             <input 
+               type="text" required maxLength={8} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+               className={`${inputClass} text-center tracking-[0.5em] font-bold text-lg`}
+               placeholder="123456"
+             />
+             <p className="text-[10px] text-center mt-2 text-slate-400">Cek folder spam jika kode tidak masuk.</p>
+           </div>
+        )}
+
+        {/* Password Fields */}
+        {(view === 'login' || view === 'register' || view === 'admin') && (
           <div className="animate-in slide-in-from-top-2">
             <label className={labelClass}>Password</label>
             <input 
@@ -188,6 +256,27 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
               placeholder="••••••••"
             />
           </div>
+        )}
+
+        {view === 'new-password' && (
+            <>
+                <div className="animate-in slide-in-from-top-2">
+                    <label className={labelClass}>Password Baru</label>
+                    <input 
+                    type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+                    className={inputClass}
+                    placeholder="Minimal 6 karakter"
+                    />
+                </div>
+                <div className="animate-in slide-in-from-top-2">
+                    <label className={labelClass}>Konfirmasi Password</label>
+                    <input 
+                    type="password" required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                    className={inputClass}
+                    placeholder="Ulangi password baru"
+                    />
+                </div>
+            </>
         )}
 
         <button 
@@ -200,7 +289,14 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                Memproses...
              </span>
-          ) : (view === 'login' ? 'Masuk' : view === 'admin' ? 'Masuk Admin' : view === 'register' ? 'Daftar Akun' : 'Kirim Link Reset')}
+          ) : (
+             view === 'login' ? 'Masuk' : 
+             view === 'admin' ? 'Masuk Admin' : 
+             view === 'register' ? 'Daftar Akun' : 
+             view === 'forgot' ? 'Kirim Kode OTP' :
+             view === 'verify-otp' ? 'Verifikasi Kode' :
+             'Reset Password'
+            )}
         </button>
 
         {view === 'login' && (
@@ -211,14 +307,14 @@ const AuthForm: React.FC<AuthFormProps> = ({ onSuccess, isLogin, setIsLogin, onS
           </div>
         )}
 
-        {view === 'forgot' && (
+        {(view === 'forgot' || view === 'verify-otp') && (
           <button type="button" onClick={() => handleSwitchView('login')} className="w-full py-3 bg-white text-slate-500 border border-slate-200 rounded-xl font-bold hover:bg-slate-50 transition-all text-sm">
             Batal
           </button>
         )}
       </form>
 
-      {view !== 'admin' && view !== 'forgot' && (
+      {(view === 'login' || view === 'register') && (
         <div className="mt-8 pt-6 border-t border-slate-100 text-center">
           <p className="text-sm text-slate-500">
             {view === 'login' ? "Belum punya akun?" : "Sudah punya akun?"}{' '}
