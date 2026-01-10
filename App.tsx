@@ -146,8 +146,8 @@ const App: React.FC = () => {
         activePage={currentPage}
       />
 
-      {/* Main Content Area with Dynamic Top Padding to account for Fixed Navbar */}
-      <main className={`flex-grow ${currentPage !== 'home' ? 'pt-24 md:pt-28' : ''}`}>
+      {/* Main Content Area with Dynamic Padding for Mobile Bottom Nav (pb-24) */}
+      <main className={`flex-grow ${currentPage !== 'home' ? 'pt-24 md:pt-28' : ''} pb-24 md:pb-0`}>
         {currentPage === 'home' && (
           <>
             <Hero onStartRegistration={() => navigate(currentUser ? 'register' : 'auth')} />
